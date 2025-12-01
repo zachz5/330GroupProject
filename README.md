@@ -13,21 +13,21 @@
 
 ## Getting Started
 
-### Frontend
-```bash
-cd frontend
-# Install dependencies and start dev server
-```
-
-### Backend
+### Backend Setup
 ```bash
 cd backend
-# Install dependencies and start server
+npm install
+npm run dev
 ```
+Server runs on `http://localhost:3000`
 
-### API
+### Frontend Setup
 ```bash
-cd api
-# Install dependencies and start API server
+cd frontend
+npm install
+npm run dev
 ```
+Frontend runs on `http://localhost:5173`
+
+The frontend is configured to connect to the backend API at `http://localhost:3000/api`
 
