@@ -6,7 +6,7 @@ const router = express.Router();
 // GET all furniture items
 router.get('/', async (req, res, next) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM furniture ORDER BY furniture_id DESC');
+    const [rows] = await pool.execute('SELECT * FROM Furniture ORDER BY furniture_id DESC');
     res.json(rows);
   } catch (error) {
     next(error);
@@ -17,7 +17,7 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const [rows] = await pool.execute('SELECT * FROM furniture WHERE furniture_id = ?', [id]);
+    const [rows] = await pool.execute('SELECT * FROM Furniture WHERE furniture_id = ?', [id]);
     
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Item not found' });
@@ -39,7 +39,7 @@ router.post('/', async (req, res, next) => {
     }
     
     const [result] = await pool.execute(
-      'INSERT INTO furniture (name, category, description, price, condition_status, quantity, image_url, added_by_employee_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO Furniture (name, category, description, price, condition_status, quantity, image_url, added_by_employee_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [
         name,
         category || null,
@@ -52,7 +52,7 @@ router.post('/', async (req, res, next) => {
       ]
     );
     
-    const [newItem] = await pool.execute('SELECT * FROM furniture WHERE furniture_id = ?', [result.insertId]);
+    const [newItem] = await pool.execute('SELECT * FROM Furniture WHERE furniture_id = ?', [result.insertId]);
     res.status(201).json(newItem[0]);
   } catch (error) {
     next(error);
@@ -66,7 +66,7 @@ router.put('/:id', async (req, res, next) => {
     const { name, category, description, price, condition_status, quantity, image_url } = req.body;
     
     const [result] = await pool.execute(
-      'UPDATE furniture SET name = ?, category = ?, description = ?, price = ?, condition_status = ?, quantity = ?, image_url = ? WHERE furniture_id = ?',
+      'UPDATE Furniture SET name = ?, category = ?, description = ?, price = ?, condition_status = ?, quantity = ?, image_url = ? WHERE furniture_id = ?',
       [name, category, description, price, condition_status, quantity, image_url, id]
     );
     
@@ -74,7 +74,7 @@ router.put('/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Item not found' });
     }
     
-    const [updatedItem] = await pool.execute('SELECT * FROM furniture WHERE furniture_id = ?', [id]);
+    const [updatedItem] = await pool.execute('SELECT * FROM Furniture WHERE furniture_id = ?', [id]);
     res.json(updatedItem[0]);
   } catch (error) {
     next(error);
@@ -85,7 +85,7 @@ router.put('/:id', async (req, res, next) => {
 router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const [result] = await pool.execute('DELETE FROM furniture WHERE furniture_id = ?', [id]);
+    const [result] = await pool.execute('DELETE FROM Furniture WHERE furniture_id = ?', [id]);
     
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Item not found' });
