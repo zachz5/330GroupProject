@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { Link } from '../components/Link';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -7,7 +7,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [returnTo, setReturnTo] = useState<string | null>(null);
   const { login } = useAuth();
+
+  // Get returnTo from URL query params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const returnToParam = params.get('returnTo');
+    if (returnToParam) {
+      setReturnTo(returnToParam);
+    }
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -17,12 +27,22 @@ export default function LoginPage() {
     try {
       // Login updates the auth context
       const userData = await login(email, password);
-      // Navigate to inventory page for employees, profile page for customers
-      if (userData.isEmployee) {
-        window.history.pushState({}, '', '/inventory');
-      } else {
-        window.history.pushState({}, '', '/profile');
+      
+      // Determine where to redirect
+      let redirectPath = '/profile';
+      if (returnTo) {
+        // If returnTo is specified, use it (but only for customers, not employees)
+        if (!userData.isEmployee) {
+          redirectPath = returnTo;
+        } else {
+          // Employees always go to inventory, ignore returnTo
+          redirectPath = '/inventory';
+        }
+      } else if (userData.isEmployee) {
+        redirectPath = '/inventory';
       }
+      
+      window.history.pushState({}, '', redirectPath);
       window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to log in');

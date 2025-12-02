@@ -38,7 +38,7 @@ export interface Item {
   price: number;
   condition_status: 'New' | 'Like New' | 'Good' | 'Fair' | 'Poor';
   quantity: number;
-  image_url?: string;
+  emoji?: string;
   date_added?: string;
   added_by_employee_id?: number;
 }
@@ -109,6 +109,25 @@ export async function createItem(item: Omit<Item, 'furniture_id' | 'date_added'>
     method: 'POST',
     body: JSON.stringify(item),
   });
+}
+
+// Upload API
+export async function uploadImage(file: File): Promise<{ imageUrl: string }> {
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  const response = await fetch(`${API_URL}/upload/image`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || `Upload failed: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 export async function updateItem(

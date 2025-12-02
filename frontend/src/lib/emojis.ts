@@ -2,8 +2,14 @@ import { Item } from './api';
 
 /**
  * Get emoji for a furniture item based on its name and category
+ * If item has an emoji field set, use that instead
  */
 export function getFurnitureEmoji(item: Item): string {
+  // If item has an emoji field, use it
+  if (item.emoji) {
+    return item.emoji;
+  }
+  
   const name = item.name.toLowerCase();
   const category = item.category?.toLowerCase() || '';
 

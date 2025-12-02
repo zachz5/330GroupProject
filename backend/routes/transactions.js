@@ -39,7 +39,7 @@ router.post('/', async (req, res, next) => {
       // Create transaction record
       const [transactionResult] = await connection.execute(
         `INSERT INTO Customer_Purchase_Transaction (customer_id, transaction_date, total_amount, payment_method, status)
-         VALUES (?, NOW(), ?, ?, 'Completed')`,
+         VALUES (?, NOW(), ?, ?, 'Processing')`,
         [customer_id, total_amount, normalizedPaymentMethod]
       );
       
@@ -76,6 +76,9 @@ router.post('/', async (req, res, next) => {
         [transactionId]
       );
       
+      // Release connection before sending response
+      connection.release();
+      
       res.status(201).json({
         transaction: transaction[0],
         details: details
@@ -83,9 +86,8 @@ router.post('/', async (req, res, next) => {
     } catch (error) {
       // Rollback on error
       await connection.rollback();
-      throw error;
-    } finally {
       connection.release();
+      throw error;
     }
   } catch (error) {
     console.error('Error creating transaction:', error);

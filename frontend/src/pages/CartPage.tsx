@@ -41,8 +41,8 @@ export default function CartPage() {
 
   const handleCheckout = () => {
     if (!user) {
-      // Redirect to login if not logged in
-      window.history.pushState({}, '', '/login');
+      // Redirect to login with return URL to checkout
+      window.history.pushState({}, '', '/login?returnTo=/checkout');
       window.dispatchEvent(new PopStateEvent('popstate'));
     } else {
       // Navigate to checkout

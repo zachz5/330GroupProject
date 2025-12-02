@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, X, Save, Search } from 'lucide-react';
-import { getItems, deleteItem, updateItem, Item } from '../lib/api';
+import { getItems, deleteItem, updateItem, createItem, Item } from '../lib/api';
 import { getFurnitureEmoji } from '../lib/emojis';
 
 export default function InventoryPage() {
@@ -13,6 +13,16 @@ export default function InventoryPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<Item>>({});
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newItem, setNewItem] = useState<Partial<Item>>({
+    name: '',
+    category: '',
+    description: '',
+    price: undefined,
+    condition_status: undefined,
+    quantity: undefined,
+  });
+  const [selectedEmoji, setSelectedEmoji] = useState<string>('🪑');
 
   useEffect(() => {
     loadItems();
@@ -50,12 +60,18 @@ export default function InventoryPage() {
       price: typeof item.price === 'string' ? parseFloat(item.price) : item.price,
       condition_status: item.condition_status,
       quantity: item.quantity,
+      emoji: item.emoji || getFurnitureEmoji(item),
     });
   };
 
   const handleSave = async (id: number) => {
     try {
-      const updated = await updateItem(id, editForm);
+      // Ensure emoji is included if it was set
+      const updateData = { ...editForm };
+      if (editForm.emoji !== undefined) {
+        updateData.emoji = editForm.emoji;
+      }
+      const updated = await updateItem(id, updateData);
       setItems(items.map(item => item.furniture_id === id ? updated : item));
       setEditingId(null);
       setEditForm({});
@@ -112,6 +128,58 @@ export default function InventoryPage() {
     setEditForm({});
   };
 
+  const handleAddItem = async () => {
+    try {
+      setError('');
+      
+      // Convert undefined to null for database compatibility
+      // Condition is required, so it should always be set
+      if (!newItem.condition_status) {
+        setError('Condition is required');
+        return;
+      }
+
+      const itemToCreate = {
+        name: newItem.name || '',
+        category: newItem.category || null,
+        description: newItem.description || null,
+        price: typeof newItem.price === 'string' ? parseFloat(newItem.price) : (newItem.price ?? 0),
+        condition_status: newItem.condition_status,
+        quantity: newItem.quantity ?? 0,
+        emoji: selectedEmoji,
+      };
+
+      const created = await createItem(itemToCreate as Omit<Item, 'furniture_id' | 'date_added'>);
+      setItems([created, ...items]);
+      setShowAddModal(false);
+      setNewItem({
+        name: '',
+        category: '',
+        description: '',
+        price: undefined,
+        condition_status: undefined,
+        quantity: undefined,
+      });
+      setSelectedEmoji('🪑');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create item');
+    }
+  };
+
+  const handleCloseAddModal = () => {
+    setShowAddModal(false);
+    setNewItem({
+      name: '',
+      category: '',
+      description: '',
+      price: undefined,
+      condition_status: undefined,
+      quantity: undefined,
+    });
+    setSelectedEmoji('🪑');
+    setError('');
+  };
+
   const formatPrice = (price: number | string) => {
     const numPrice = typeof price === 'string' ? parseFloat(price) : price;
     return `$${numPrice.toFixed(2)}`;
@@ -129,8 +197,9 @@ export default function InventoryPage() {
     return 'bg-green-100 text-green-800';
   };
 
-  const getConditionColor = (condition: string) => {
-    switch (condition) {
+  const getConditionColor = (condition: string | null | undefined) => {
+    const cond = condition || 'Good'; // Default to 'Good' if null/undefined/empty
+    switch (cond) {
       case 'New': return 'bg-blue-100 text-blue-800';
       case 'Like New': return 'bg-green-100 text-green-800';
       case 'Good': return 'bg-emerald-100 text-emerald-800';
@@ -140,12 +209,19 @@ export default function InventoryPage() {
     }
   };
 
+  const getConditionDisplay = (condition: string | null | undefined) => {
+    return condition || 'Good'; // Default to 'Good' if null/undefined/empty
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Inventory Management</h1>
-          <button className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-emerald-700 transition-colors">
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-emerald-700 transition-colors"
+          >
             <Plus size={20} />
             Add New Item
           </button>
@@ -252,8 +328,33 @@ export default function InventoryPage() {
                       <td className="py-4 px-6">
                         {isEditing ? (
                           <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-gray-100 rounded flex items-center justify-center text-2xl">
-                              {getFurnitureEmoji(item)}
+                            <div className="flex flex-col gap-1">
+                              <div className="w-12 h-12 bg-gray-100 rounded flex items-center justify-center text-2xl border-2 border-gray-300">
+                                {editForm.emoji || getFurnitureEmoji(item)}
+                              </div>
+                              <select
+                                value={editForm.emoji || getFurnitureEmoji(item)}
+                                onChange={(e) => setEditForm({ ...editForm, emoji: e.target.value })}
+                                className="text-xs px-1 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-emerald-500 focus:border-transparent outline-none"
+                                title="Select emoji"
+                              >
+                                <option value="🪑">🪑</option>
+                                <option value="📋">📋</option>
+                                <option value="🛏️">🛏️</option>
+                                <option value="🛋️">🛋️</option>
+                                <option value="🗄️">🗄️</option>
+                                <option value="💡">💡</option>
+                                <option value="🪞">🪞</option>
+                                <option value="📚">📚</option>
+                                <option value="🧶">🧶</option>
+                                <option value="🪟">🪟</option>
+                                <option value="👔">👔</option>
+                                <option value="🪴">🪴</option>
+                                <option value="📦">📦</option>
+                                <option value="🖼️">🖼️</option>
+                                <option value="🪵">🪵</option>
+                                <option value="🪶">🪶</option>
+                              </select>
                             </div>
                             <input
                               type="text"
@@ -300,7 +401,7 @@ export default function InventoryPage() {
                           </select>
                         ) : (
                           <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getConditionColor(item.condition_status)}`}>
-                            {item.condition_status}
+                            {getConditionDisplay(item.condition_status)}
                           </span>
                         )}
                       </td>
@@ -372,6 +473,173 @@ export default function InventoryPage() {
           )}
         </div>
       </div>
+
+      {/* Add New Item Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-900">Add New Item</h2>
+              <button
+                onClick={handleCloseAddModal}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Emoji Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Item Icon
+                </label>
+                <div className="flex items-center gap-4">
+                  <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center text-5xl border-2 border-gray-300">
+                    {selectedEmoji}
+                  </div>
+                  <select
+                    value={selectedEmoji}
+                    onChange={(e) => setSelectedEmoji(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-lg"
+                  >
+                    <option value="🪑">🪑 Chair</option>
+                    <option value="📋">📋 Table/Desk</option>
+                    <option value="🛏️">🛏️ Bed</option>
+                    <option value="🛋️">🛋️ Sofa/Couch</option>
+                    <option value="🗄️">🗄️ Dresser/Cabinet</option>
+                    <option value="💡">💡 Lamp/Lighting</option>
+                    <option value="🪞">🪞 Mirror</option>
+                    <option value="📚">📚 Bookshelf</option>
+                    <option value="🧶">🧶 Rug/Carpet</option>
+                    <option value="🪟">🪟 Curtain/Window</option>
+                    <option value="👔">👔 Wardrobe/Closet</option>
+                    <option value="🪴">🪴 Plant/Decor</option>
+                    <option value="📦">📦 Storage Box</option>
+                    <option value="🖼️">🖼️ Picture Frame</option>
+                    <option value="🪵">🪵 Wood Furniture</option>
+                    <option value="🪶">🪶 Pillow/Cushion</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  value={newItem.name || ''}
+                  onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  placeholder="Item name"
+                  required
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Category
+                </label>
+                <input
+                  type="text"
+                  value={newItem.category || ''}
+                  onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  placeholder="e.g., Chair, Desk, Table"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={newItem.description || ''}
+                  onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  rows={3}
+                  placeholder="Item description"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Price */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Price *
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-500">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newItem.price ?? ''}
+                      onChange={(e) => setNewItem({ ...newItem, price: e.target.value === '' ? undefined : parseFloat(e.target.value) || 0 })}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                      min="0"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Quantity */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    value={newItem.quantity ?? ''}
+                    onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value === '' ? undefined : parseInt(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              {/* Condition */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Condition *
+                </label>
+                <select
+                  value={newItem.condition_status || ''}
+                  onChange={(e) => setNewItem({ ...newItem, condition_status: e.target.value as Item['condition_status'] })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  required
+                >
+                  <option value="">Select condition...</option>
+                  <option value="New">New</option>
+                  <option value="Like New">Like New</option>
+                  <option value="Good">Good</option>
+                  <option value="Fair">Fair</option>
+                  <option value="Poor">Poor</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
+              <button
+                onClick={handleCloseAddModal}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddItem}
+                disabled={!newItem.name || !newItem.price || !newItem.condition_status}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add Item
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -85,8 +85,8 @@ export default function Router() {
 
   const routes: { [key: string]: JSX.Element } = {
     '/': <HomePage />,
-    '/browse': <ProtectedRoute requireCustomer={true}><BrowsePage /></ProtectedRoute>,
-    '/item': <ProtectedRoute requireCustomer={true}><ItemPage /></ProtectedRoute>,
+    '/browse': <BrowsePage />,
+    '/item': <ItemPage />,
     '/register': <RegisterPage />,
     '/login': <LoginPage />,
     '/profile': <ProfilePage />,
@@ -94,7 +94,7 @@ export default function Router() {
     '/dashboard': <ProtectedRoute requireEmployee={true}><DashboardPage /></ProtectedRoute>,
     '/users': <ProtectedRoute requireEmployee={true}><UsersPage /></ProtectedRoute>,
     '/orders': <ProtectedRoute requireEmployee={true}><OrdersPage /></ProtectedRoute>,
-    '/cart': <ProtectedRoute requireCustomer={true}><CartPage /></ProtectedRoute>,
+    '/cart': <CartPage />,
     '/checkout': <ProtectedRoute requireCustomer={true}><CheckoutPage /></ProtectedRoute>,
   };
 
