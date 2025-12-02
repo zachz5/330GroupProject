@@ -57,9 +57,24 @@ app.get('/api/health', (req, res) => {
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   console.error('Error stack:', err.stack);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal server error',
-  });
+  
+  // Make sure we send a response even if headers were already sent
+  if (!res.headersSent) {
+    res.status(err.status || 500).json({
+      error: err.message || 'Internal server error',
+    });
+  }
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
 });
 
 app.listen(PORT, () => {

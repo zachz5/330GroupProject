@@ -56,6 +56,7 @@ router.post('/register', async (req, res, next) => {
 
 // POST login
 router.post('/login', async (req, res, next) => {
+  let connection = null;
   try {
     const { email, password } = req.body;
     
@@ -137,7 +138,15 @@ router.post('/login', async (req, res, next) => {
       isEmployee: employeeCheck.length > 0,
     });
   } catch (error) {
-    next(error);
+    console.error('Login error:', error);
+    console.error('Login error stack:', error.stack);
+    // Make sure we always send a response
+    if (!res.headersSent) {
+      next(error);
+    } else {
+      // If headers were sent, log the error but don't try to send another response
+      console.error('Response already sent, cannot send error response');
+    }
   }
 });
 
