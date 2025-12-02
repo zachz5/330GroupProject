@@ -39,6 +39,7 @@ export interface Item {
   condition_status: 'New' | 'Like New' | 'Good' | 'Fair' | 'Poor';
   quantity: number;
   emoji?: string;
+  notes?: string | null;
   date_added?: string;
   added_by_employee_id?: number;
 }
@@ -182,6 +183,7 @@ export interface DashboardStats {
   totalOrders: number;
   ordersAwaitingShipment: number;
   lowStockItems: number;
+  totalSales: number;
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -192,6 +194,13 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     getItems().catch(() => []),
   ]);
   
+  // Calculate total sales: sum of (price * quantity) for all items
+  const totalSales = items.reduce((sum, item) => {
+    const price = typeof item.price === 'string' ? parseFloat(item.price) : item.price;
+    const quantity = item.quantity || 0;
+    return sum + (price * quantity);
+  }, 0);
+  
   return {
     totalUsers: customers.length,
     totalOrders: transactions.length,
@@ -199,6 +208,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       t.status === 'Pending' || t.status === 'Processing'
     ).length,
     lowStockItems: items.filter(item => item.quantity < 5).length,
+    totalSales: totalSales,
   };
 }
 

@@ -7,10 +7,30 @@ const router = express.Router();
 router.get('/', async (req, res, next) => {
   try {
     const [rows] = await pool.execute('SELECT * FROM Furniture ORDER BY furniture_id DESC');
-    // Remove image_url if it exists and ensure emoji field exists
+    
+    // Get notes from Inventory_Log for all items
+    const furnitureIds = rows.map(row => row.furniture_id);
+    let notesMap = new Map();
+    if (furnitureIds.length > 0) {
+      try {
+        const placeholders = furnitureIds.map(() => '?').join(',');
+        const [notesRows] = await pool.execute(
+          `SELECT furniture_id, notes FROM Inventory_Log WHERE furniture_id IN (${placeholders})`,
+          furnitureIds
+        );
+        notesRows.forEach(row => {
+          notesMap.set(row.furniture_id, row.notes || null);
+        });
+      } catch (notesError) {
+        // If Inventory_Log table doesn't exist, continue without notes
+        console.log('Note: Inventory_Log table may not exist:', notesError.message);
+      }
+    }
+    
+    // Remove image_url if it exists and ensure emoji field exists, add notes
     const rowsWithEmoji = rows.map(row => {
       const { image_url, ...rest } = row;
-      return { ...rest, emoji: row.emoji || null };
+      return { ...rest, emoji: row.emoji || null, notes: notesMap.get(row.furniture_id) || null };
     });
     res.json(rowsWithEmoji);
   } catch (error) {
@@ -18,10 +38,27 @@ router.get('/', async (req, res, next) => {
     if (error.code === 'ER_BAD_FIELD_ERROR' && error.message.includes('emoji')) {
       try {
         const [rows] = await pool.execute('SELECT * FROM Furniture ORDER BY furniture_id DESC');
-        // Add null emoji to each row and remove image_url
+        // Get notes
+        const furnitureIds = rows.map(row => row.furniture_id);
+        let notesMap = new Map();
+        if (furnitureIds.length > 0) {
+          try {
+            const placeholders = furnitureIds.map(() => '?').join(',');
+            const [notesRows] = await pool.execute(
+              `SELECT furniture_id, notes FROM Inventory_Log WHERE furniture_id IN (${placeholders})`,
+              furnitureIds
+            );
+            notesRows.forEach(row => {
+              notesMap.set(row.furniture_id, row.notes || null);
+            });
+          } catch (notesError) {
+            console.log('Note: Inventory_Log table may not exist:', notesError.message);
+          }
+        }
+        // Add null emoji to each row and remove image_url, add notes
         const rowsWithEmoji = rows.map(row => {
           const { image_url, ...rest } = row;
-          return { ...rest, emoji: null };
+          return { ...rest, emoji: null, notes: notesMap.get(row.furniture_id) || null };
         });
         return res.json(rowsWithEmoji);
       } catch (fallbackError) {
@@ -42,10 +79,24 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Item not found' });
     }
     
+    // Get notes from Inventory_Log
+    let notes = null;
+    try {
+      const [notesRows] = await pool.execute(
+        'SELECT notes FROM Inventory_Log WHERE furniture_id = ? LIMIT 1',
+        [id]
+      );
+      if (notesRows.length > 0) {
+        notes = notesRows[0].notes || null;
+      }
+    } catch (notesError) {
+      console.log('Note: Inventory_Log table may not exist:', notesError.message);
+    }
+    
     // Ensure emoji field exists and remove image_url if it exists
     const item = rows[0];
     const { image_url, ...itemWithoutImageUrl } = item;
-    res.json({ ...itemWithoutImageUrl, emoji: item.emoji || null });
+    res.json({ ...itemWithoutImageUrl, emoji: item.emoji || null, notes });
   } catch (error) {
     // If emoji column doesn't exist, try without it
     if (error.code === 'ER_BAD_FIELD_ERROR' && error.message.includes('emoji')) {
@@ -54,9 +105,22 @@ router.get('/:id', async (req, res, next) => {
         if (rows.length === 0) {
           return res.status(404).json({ error: 'Item not found' });
         }
+        // Get notes
+        let notes = null;
+        try {
+          const [notesRows] = await pool.execute(
+            'SELECT notes FROM Inventory_Log WHERE furniture_id = ? LIMIT 1',
+            [id]
+          );
+          if (notesRows.length > 0) {
+            notes = notesRows[0].notes || null;
+          }
+        } catch (notesError) {
+          console.log('Note: Inventory_Log table may not exist:', notesError.message);
+        }
         const item = rows[0];
         const { image_url, ...itemWithoutImageUrl } = item;
-        return res.json({ ...itemWithoutImageUrl, emoji: null });
+        return res.json({ ...itemWithoutImageUrl, emoji: null, notes });
       } catch (fallbackError) {
         return next(fallbackError);
       }
@@ -79,6 +143,12 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Valid condition status is required (New, Like New, Good, Fair, or Poor)' });
     }
     
+    // Convert price to number if it's a string
+    const numericPrice = typeof price === 'string' ? parseFloat(price) : Number(price);
+    if (isNaN(numericPrice)) {
+      return res.status(400).json({ error: 'Price must be a valid number' });
+    }
+    
     // Convert undefined to null explicitly for MySQL compatibility
     const validConditionStatus = condition_status;
     
@@ -91,7 +161,7 @@ router.post('/', async (req, res, next) => {
           name,
           category === undefined ? null : (category || null),
           description === undefined ? null : (description || null),
-          price,
+          numericPrice,
           validConditionStatus,
           quantity === undefined ? 0 : (quantity || 0),
           emoji === undefined ? null : (emoji || null),
@@ -107,13 +177,20 @@ router.post('/', async (req, res, next) => {
             name,
             category === undefined ? null : (category || null),
             description === undefined ? null : (description || null),
-            price,
+            numericPrice,
             validConditionStatus,
             quantity === undefined ? 0 : (quantity || 0),
             added_by_employee_id === undefined ? null : (added_by_employee_id || null)
           ]
         );
       } else {
+        console.error('Error inserting furniture item:', insertError);
+        console.error('Insert error details:', {
+          code: insertError.code,
+          sqlState: insertError.sqlState,
+          sqlMessage: insertError.sqlMessage,
+          message: insertError.message
+        });
         throw insertError;
       }
     }
@@ -123,6 +200,14 @@ router.post('/', async (req, res, next) => {
     const { image_url, ...itemWithoutImageUrl } = newItem[0];
     res.status(201).json({ ...itemWithoutImageUrl, emoji: newItem[0].emoji || null });
   } catch (error) {
+    console.error('Error in POST /items:', error);
+    console.error('Error details:', {
+      code: error.code,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage,
+      message: error.message,
+      stack: error.stack
+    });
     next(error);
   }
 });
@@ -131,7 +216,11 @@ router.post('/', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, category, description, price, condition_status, quantity, emoji } = req.body;
+    const { name, category, description, price, condition_status, quantity, emoji, notes, employee_id } = req.body;
+    
+    console.log('PUT /items/:id - Request body:', JSON.stringify(req.body, null, 2));
+    console.log('PUT /items/:id - Notes value:', notes, 'Type:', typeof notes);
+    console.log('PUT /items/:id - Employee ID:', employee_id);
     
     // Convert undefined to null explicitly for MySQL compatibility
     // Validate condition_status if provided, otherwise default to 'Good' to ensure all items have a condition
@@ -185,10 +274,95 @@ router.put('/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Item not found' });
     }
     
+    // Update or insert notes in Inventory_Log
+    if (notes !== undefined) {
+      try {
+        // Process notes: convert to string, trim, truncate to 255 chars for varchar(255)
+        // Allow empty strings (they should be saved as empty string, not null)
+        let notesValue = null;
+        if (notes !== null && notes !== undefined) {
+          const notesString = String(notes).trim();
+          // Truncate to 255 characters to match varchar(255) column
+          // Save empty string as empty string (not null) if user cleared the field
+          notesValue = notesString.substring(0, 255);
+        }
+        
+        // Get employee_id from request body (required for foreign key constraint)
+        const employeeId = employee_id || null;
+        
+        console.log(`Updating notes for furniture_id ${id}:`, notesValue);
+        console.log(`Notes length: ${notesValue !== null ? notesValue.length : 0}, Original: "${notes}"`);
+        console.log(`Employee ID: ${employeeId}`);
+        
+        // Check if log entry exists
+        const [existingLog] = await pool.execute(
+          'SELECT log_id FROM Inventory_Log WHERE furniture_id = ? LIMIT 1',
+          [id]
+        );
+        
+        if (existingLog.length > 0) {
+          // Update existing log (include employee_id if provided)
+          if (employeeId) {
+            const [updateResult] = await pool.execute(
+              'UPDATE Inventory_Log SET notes = ?, employee_id = ? WHERE furniture_id = ?',
+              [notesValue, employeeId, id]
+            );
+            console.log(`✅ Updated notes for furniture_id ${id}, affected rows:`, updateResult.affectedRows);
+          } else {
+            const [updateResult] = await pool.execute(
+              'UPDATE Inventory_Log SET notes = ? WHERE furniture_id = ?',
+              [notesValue, id]
+            );
+            console.log(`✅ Updated notes for furniture_id ${id}, affected rows:`, updateResult.affectedRows);
+          }
+        } else {
+          // Insert new log entry (employee_id is required for foreign key)
+          if (!employeeId) {
+            throw new Error('employee_id is required when creating a new Inventory_Log entry');
+          }
+          const [insertResult] = await pool.execute(
+            'INSERT INTO Inventory_Log (furniture_id, notes, employee_id) VALUES (?, ?, ?)',
+            [id, notesValue, employeeId]
+          );
+          console.log(`✅ Inserted notes for furniture_id ${id}, insertId:`, insertResult.insertId);
+        }
+      } catch (notesError) {
+        // Log the full error for debugging
+        console.error('❌ Error updating Inventory_Log:', notesError);
+        console.error('Error details:', {
+          message: notesError.message,
+          code: notesError.code,
+          sqlState: notesError.sqlState,
+          sqlMessage: notesError.sqlMessage,
+          notesValue: notes,
+          notesType: typeof notes,
+          furniture_id: id,
+          employee_id: employee_id
+        });
+        // Re-throw the error so the request fails and user sees the error
+        throw notesError;
+      }
+    }
+    
     const [updatedItem] = await pool.execute('SELECT * FROM Furniture WHERE furniture_id = ?', [id]);
+    
+    // Get notes from Inventory_Log
+    let itemNotes = null;
+    try {
+      const [notesRows] = await pool.execute(
+        'SELECT notes FROM Inventory_Log WHERE furniture_id = ? LIMIT 1',
+        [id]
+      );
+      if (notesRows.length > 0) {
+        itemNotes = notesRows[0].notes || null;
+      }
+    } catch (notesError) {
+      console.log('Note: Inventory_Log table may not exist:', notesError.message);
+    }
+    
     // Remove image_url from response
     const { image_url, ...itemWithoutImageUrl } = updatedItem[0];
-    res.json({ ...itemWithoutImageUrl, emoji: updatedItem[0].emoji || null });
+    res.json({ ...itemWithoutImageUrl, emoji: updatedItem[0].emoji || null, notes: itemNotes });
   } catch (error) {
     next(error);
   }

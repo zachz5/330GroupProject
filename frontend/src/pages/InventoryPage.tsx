@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, X, Save, Search } from 'lucide-react';
 import { getItems, deleteItem, updateItem, createItem, Item } from '../lib/api';
 import { getFurnitureEmoji } from '../lib/emojis';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function InventoryPage() {
+  const { user } = useAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -61,21 +63,53 @@ export default function InventoryPage() {
       condition_status: item.condition_status,
       quantity: item.quantity,
       emoji: item.emoji || getFurnitureEmoji(item),
+      notes: item.notes || '',
     });
   };
 
   const handleSave = async (id: number) => {
     try {
-      // Ensure emoji is included if it was set
-      const updateData = { ...editForm };
-      if (editForm.emoji !== undefined) {
-        updateData.emoji = editForm.emoji;
+      setError(''); // Clear any previous errors
+      
+      // Build update data with all fields from editForm
+      const updateData: Partial<Item> = {};
+      
+      if (editForm.name !== undefined) updateData.name = editForm.name;
+      if (editForm.category !== undefined) updateData.category = editForm.category;
+      if (editForm.description !== undefined) updateData.description = editForm.description;
+      if (editForm.price !== undefined) updateData.price = editForm.price;
+      if (editForm.condition_status !== undefined) updateData.condition_status = editForm.condition_status;
+      if (editForm.quantity !== undefined) updateData.quantity = editForm.quantity;
+      if (editForm.emoji !== undefined) updateData.emoji = editForm.emoji;
+      // Always include notes if it exists in editForm (even if empty string)
+      if (editForm.hasOwnProperty('notes')) {
+        updateData.notes = editForm.notes || '';
       }
-      const updated = await updateItem(id, updateData);
-      setItems(items.map(item => item.furniture_id === id ? updated : item));
+      
+      // Include employee_id for Inventory_Log foreign key constraint
+      // Use type assertion since employee_id is not part of Item interface but needed for backend
+      const updateDataWithEmployee = updateData as Partial<Item> & { employee_id?: number };
+      if (user?.employee_id) {
+        updateDataWithEmployee.employee_id = user.employee_id;
+      }
+      
+      console.log('Saving item:', id, 'with notes:', updateDataWithEmployee.notes, 'employee_id:', updateDataWithEmployee.employee_id);
+      
+      const updated = await updateItem(id, updateDataWithEmployee);
+      
+      console.log('Updated item response:', updated);
+      
+      // Update the items state with the complete updated item
+      setItems(items.map(item => 
+        item.furniture_id === id 
+          ? { ...item, ...updated } 
+          : item
+      ));
+      
       setEditingId(null);
       setEditForm({});
     } catch (err) {
+      console.error('Error saving item:', err);
       setError(err instanceof Error ? err.message : 'Failed to update item');
     }
   };
@@ -147,6 +181,7 @@ export default function InventoryPage() {
         condition_status: newItem.condition_status,
         quantity: newItem.quantity ?? 0,
         emoji: selectedEmoji,
+        added_by_employee_id: user?.employee_id || null,
       };
 
       const created = await createItem(itemToCreate as Omit<Item, 'furniture_id' | 'date_added'>);
@@ -309,6 +344,7 @@ export default function InventoryPage() {
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Condition</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Price</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Status</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-900">Notes</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Actions</th>
                   </tr>
                 </thead>
@@ -426,6 +462,25 @@ export default function InventoryPage() {
                         <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(item.quantity)}`}>
                           {getStatus(item.quantity)}
                         </span>
+                      </td>
+                      <td className="py-4 px-6 max-w-xs">
+                        {isEditing ? (
+                          <textarea
+                            value={editForm.notes || ''}
+                            onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-sm"
+                            rows={2}
+                            placeholder="Add notes..."
+                          />
+                        ) : (
+                          <div className="text-sm text-gray-600">
+                            {item.notes ? (
+                              <span className="line-clamp-2" title={item.notes}>{item.notes}</span>
+                            ) : (
+                              <span className="text-gray-400 italic">No notes</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="py-4 px-6">
                         {isEditing ? (

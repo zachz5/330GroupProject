@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, ShoppingCart, Package, AlertTriangle } from 'lucide-react';
+import { Users, ShoppingCart, Package, AlertTriangle, DollarSign } from 'lucide-react';
 import { getItems } from '../lib/api';
 
 interface DashboardStats {
@@ -7,6 +7,7 @@ interface DashboardStats {
   totalOrders: number;
   ordersAwaitingShipment: number;
   lowStockItems: number;
+  totalSales: number;
 }
 
 export default function DashboardPage() {
@@ -15,6 +16,7 @@ export default function DashboardPage() {
     totalOrders: 0,
     ordersAwaitingShipment: 0,
     lowStockItems: 0,
+    totalSales: 0,
   });
   const [loading, setLoading] = useState(true);
   const [lowStockAlerts, setLowStockAlerts] = useState<Array<{ id: number; name: string; quantity: number }>>([]);
@@ -42,6 +44,13 @@ export default function DashboardPage() {
         quantity: item.quantity,
       })));
 
+      // Calculate total sales: sum of (price * quantity) for all items
+      const totalSales = items.reduce((sum, item) => {
+        const price = typeof item.price === 'string' ? parseFloat(item.price) : item.price;
+        const quantity = item.quantity || 0;
+        return sum + (price * quantity);
+      }, 0);
+
       setStats({
         totalUsers: customers.length,
         totalOrders: transactions.length,
@@ -49,6 +58,7 @@ export default function DashboardPage() {
           t.status === 'Pending' || t.status === 'Processing'
         ).length,
         lowStockItems: lowStock.length,
+        totalSales: totalSales,
       });
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -73,7 +83,7 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard Overview</h1>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow-sm p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -118,6 +128,20 @@ export default function DashboardPage() {
               </div>
               <div className="bg-red-100 p-3 rounded-lg">
                 <AlertTriangle className="text-red-600" size={24} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Total Sales</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  ${stats.totalSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className="bg-green-100 p-3 rounded-lg">
+                <DollarSign className="text-green-600" size={24} />
               </div>
             </div>
           </div>
