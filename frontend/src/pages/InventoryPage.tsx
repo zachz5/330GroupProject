@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, X, Save, Search } from 'lucide-react';
-import { getItems, deleteItem, updateItem, createItem, Item } from '../lib/api';
+import { Plus, Edit, X, Save, Search } from 'lucide-react';
+import { getItems, updateItem, createItem, Item } from '../lib/api';
 import { getFurnitureEmoji } from '../lib/emojis';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -14,7 +14,6 @@ export default function InventoryPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<Item>>({});
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
   const [newItem, setNewItem] = useState<Partial<Item>>({
     name: '',
@@ -39,17 +38,6 @@ export default function InventoryPage() {
       setError(err instanceof Error ? err.message : 'Failed to load items');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
-
-    try {
-      await deleteItem(id);
-      setItems(items.filter((item) => item.furniture_id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete item');
     }
   };
 
@@ -111,37 +99,6 @@ export default function InventoryPage() {
     } catch (err) {
       console.error('Error saving item:', err);
       setError(err instanceof Error ? err.message : 'Failed to update item');
-    }
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedIds.size} item(s)?`)) return;
-
-    try {
-      await Promise.all(Array.from(selectedIds).map(id => deleteItem(id)));
-      setItems(items.filter(item => !selectedIds.has(item.furniture_id)));
-      setSelectedIds(new Set());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete items');
-    }
-  };
-
-  const toggleSelect = (id: number) => {
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelectedIds(newSelected);
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === filteredItems.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredItems.map(item => item.furniture_id)));
     }
   };
 
@@ -306,21 +263,6 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Bulk Actions */}
-        {selectedIds.size > 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-center justify-between">
-            <span className="text-yellow-800 font-medium">
-              {selectedIds.size} item(s) selected
-            </span>
-            <button
-              onClick={handleBulkDelete}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Delete Selected
-            </button>
-          </div>
-        )}
-
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           {loading ? (
             <div className="text-center py-12 text-gray-600">Loading inventory...</div>
@@ -331,14 +273,6 @@ export default function InventoryPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left py-4 px-6">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.size === filteredItems.length && filteredItems.length > 0}
-                        onChange={toggleSelectAll}
-                        className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                      />
-                    </th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Item</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Quantity</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Condition</th>
@@ -353,14 +287,6 @@ export default function InventoryPage() {
                     const isEditing = editingId === item.furniture_id;
                     return (
                     <tr key={item.furniture_id} className="hover:bg-gray-50 transition-colors">
-                      <td className="py-4 px-6">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(item.furniture_id)}
-                          onChange={() => toggleSelect(item.furniture_id)}
-                          className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                        />
-                      </td>
                       <td className="py-4 px-6">
                         {isEditing ? (
                           <div className="flex items-center gap-3">
@@ -508,13 +434,6 @@ export default function InventoryPage() {
                               title="Edit"
                             >
                               <Edit size={18} />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(item.furniture_id)}
-                              className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 size={18} />
                             </button>
                           </div>
                         )}

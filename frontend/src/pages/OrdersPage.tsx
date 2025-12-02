@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from 'react';
-import { Edit, Trash2, X, Save, Search, Package, ChevronDown, ChevronUp, DollarSign } from 'lucide-react';
-import { getAllTransactions, updateTransactionStatus, deleteTransaction, Transaction } from '../lib/api';
+import { Edit, X, Save, Search, Package, ChevronDown, ChevronUp, DollarSign } from 'lucide-react';
+import { getAllTransactions, updateTransactionStatus, updateTransactionDetails, Transaction } from '../lib/api';
 import { getFurnitureEmoji } from '../lib/emojis';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -13,14 +13,16 @@ export default function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<{ status: string; notes?: string }>({ status: '' });
+  const [editForm, setEditForm] = useState<{ 
+    status: string; 
+    notes?: string;
+    items?: Array<{ detail_id: number; quantity: number; price_each: number }>;
+    total_amount?: number;
+    payment_method?: string;
+    shipping_address?: string;
+  }>({ status: '' });
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [refundConfirm, setRefundConfirm] = useState<{ isOpen: boolean; transactionId: number | null; orderId?: number }>({
-    isOpen: false,
-    transactionId: null,
-  });
-  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; transactionId: number | null; orderId?: number }>({
     isOpen: false,
     transactionId: null,
   });
@@ -46,24 +48,49 @@ export default function OrdersPage() {
     setEditForm({
       status: transaction.status,
       notes: transaction.notes || '',
+      items: transaction.items?.map(item => ({
+        detail_id: item.detail_id,
+        quantity: item.quantity,
+        price_each: item.price_each,
+      })) || [],
+      total_amount: transaction.total_amount,
+      payment_method: transaction.payment_method,
+      shipping_address: transaction.shipping_address || '',
     });
   };
 
   const handleSave = async (id: number) => {
     try {
-      const updated = await updateTransactionStatus(id, editForm.status, editForm.notes);
-      // Ensure we preserve all transaction properties and update with the response
-      setTransactions(transactions.map(t => {
-        if (t.transaction_id === id) {
-          return {
-            ...t,
-            ...updated,
-            // Ensure items are preserved if not in response
-            items: updated.items || t.items
-          };
-        }
-        return t;
-      }));
+      // Build update payload - always include shipping_address when editing
+      // Use editForm.shipping_address if it exists, otherwise keep current value
+      const currentTransaction = transactions.find(t => t.transaction_id === id);
+      const shippingAddressToSend = editForm.shipping_address !== undefined 
+        ? editForm.shipping_address 
+        : (currentTransaction?.shipping_address || '');
+      
+      const updatePayload: any = {
+        status: editForm.status,
+        shipping_address: shippingAddressToSend,
+      };
+      
+      if (editForm.notes !== undefined) updatePayload.notes = editForm.notes;
+      if (editForm.items !== undefined) updatePayload.items = editForm.items;
+      if (editForm.total_amount !== undefined) updatePayload.total_amount = editForm.total_amount;
+      if (editForm.payment_method !== undefined) updatePayload.payment_method = editForm.payment_method;
+      
+      console.log('=== SAVING TRANSACTION ===');
+      console.log('Transaction ID:', id);
+      console.log('EditForm state:', JSON.stringify(editForm, null, 2));
+      console.log('Shipping address from editForm:', editForm.shipping_address);
+      console.log('Shipping address being sent:', shippingAddressToSend);
+      console.log('Full payload:', JSON.stringify(updatePayload, null, 2));
+      const updated = await updateTransactionDetails(id, updatePayload);
+      console.log('Updated transaction response:', updated);
+      console.log('Response shipping_address:', updated.shipping_address);
+      
+      // Reload transactions to ensure we have the latest data from the server
+      await loadTransactions();
+      
       setEditingId(null);
       setEditForm({ status: '' });
       setError(''); // Clear any previous errors
@@ -73,54 +100,26 @@ export default function OrdersPage() {
     }
   };
 
-  const handleDeleteClick = (id: number) => {
-    setDeleteConfirm({ isOpen: true, transactionId: id, orderId: id });
+  const updateItemField = (detailId: number, field: 'quantity' | 'price_each', value: number) => {
+    if (!editForm.items) return;
+    
+    const updatedItems = editForm.items.map(item => 
+      item.detail_id === detailId ? { ...item, [field]: value } : item
+    );
+    
+    // Recalculate subtotal, tax, and total amount
+    const subtotal = updatedItems.reduce((sum, item) => sum + (item.quantity * item.price_each), 0);
+    const TAX_RATE = 0.04;
+    const taxAmount = Math.round(subtotal * TAX_RATE * 100) / 100;
+    const newTotal = subtotal + taxAmount;
+    
+    setEditForm({
+      ...editForm,
+      items: updatedItems,
+      total_amount: newTotal,
+    });
   };
 
-  const handleDelete = async () => {
-    if (!deleteConfirm.transactionId) return;
-
-    try {
-      await deleteTransaction(deleteConfirm.transactionId);
-      setTransactions(transactions.filter(t => t.transaction_id !== deleteConfirm.transactionId));
-      setDeleteConfirm({ isOpen: false, transactionId: null });
-      setError(''); // Clear any previous errors
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete order');
-      setDeleteConfirm({ isOpen: false, transactionId: null });
-    }
-  };
-
-  const handleBulkStatusUpdate = async (status: string) => {
-    if (selectedIds.size === 0) return;
-    if (!confirm(`Update ${selectedIds.size} order(s) to "${status}"?`)) return;
-
-    try {
-      await Promise.all(Array.from(selectedIds).map(id => updateTransactionStatus(id, status)));
-      await loadTransactions();
-      setSelectedIds(new Set());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update orders');
-    }
-  };
-
-  const toggleSelect = (id: number) => {
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelectedIds(newSelected);
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === filteredTransactions.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredTransactions.map(t => t.transaction_id)));
-    }
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -216,46 +215,6 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* Bulk Actions */}
-        {selectedIds.size > 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-center justify-between flex-wrap gap-4">
-            <span className="text-yellow-800 font-medium">
-              {selectedIds.size} order(s) selected
-            </span>
-            <div className="flex gap-2 flex-wrap">
-              <select
-                onChange={(e) => {
-                  if (e.target.value) {
-                    handleBulkStatusUpdate(e.target.value);
-                    e.target.value = '';
-                  }
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-white"
-              >
-                <option value="">Bulk Update Status...</option>
-                {STATUS_OPTIONS.map(status => (
-                  <option key={status} value={status}>{status}</option>
-                ))}
-              </select>
-              <button
-                onClick={() => {
-                  if (confirm(`Delete ${selectedIds.size} order(s)? Items will be restocked.`)) {
-                    Promise.all(Array.from(selectedIds).map(id => deleteTransaction(id)))
-                      .then(() => {
-                        loadTransactions();
-                        setSelectedIds(new Set());
-                      })
-                      .catch(err => setError(err.message));
-                  }
-                }}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Delete Selected
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           {loading ? (
             <div className="text-center py-12 text-gray-600">Loading orders...</div>
@@ -266,16 +225,9 @@ export default function OrdersPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left py-4 px-6">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.size === filteredTransactions.length && filteredTransactions.length > 0}
-                        onChange={toggleSelectAll}
-                        className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                      />
-                    </th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Order ID</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Customer</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-900">Shipping Address</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Date</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Total</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Status</th>
@@ -290,14 +242,6 @@ export default function OrdersPage() {
                     return (
                       <Fragment key={transaction.transaction_id}>
                         <tr className="hover:bg-gray-50 transition-colors">
-                          <td className="py-4 px-6">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(transaction.transaction_id)}
-                              onChange={() => toggleSelect(transaction.transaction_id)}
-                              className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                            />
-                          </td>
                           <td className="py-4 px-6">
                             <div className="flex items-center gap-2">
                               <Package size={16} className="text-gray-400" />
@@ -314,12 +258,43 @@ export default function OrdersPage() {
                               <p className="text-sm text-gray-600">{transaction.customer_email}</p>
                             </div>
                           </td>
+                          <td className="py-4 px-6">
+                            {isEditing ? (
+                              <textarea
+                                value={editForm.shipping_address || ''}
+                                onChange={(e) => setEditForm({ ...editForm, shipping_address: e.target.value })}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none resize-none"
+                                rows={2}
+                                placeholder="Enter shipping address"
+                              />
+                            ) : (
+                              <p className="text-sm text-gray-700 max-w-xs">
+                                {transaction.shipping_address || 'No address provided'}
+                              </p>
+                            )}
+                          </td>
                           <td className="py-4 px-6 text-gray-700 text-sm">
                             {new Date(transaction.transaction_date).toLocaleDateString()}
                           </td>
                           <td className="py-4 px-6">
-                            <p className="font-semibold text-gray-900">{formatPrice(transaction.total_amount)}</p>
-                            <p className="text-sm text-gray-600">{totalItems} item(s)</p>
+                            {isEditing ? (
+                              <div className="space-y-1">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={editForm.total_amount || 0}
+                                  onChange={(e) => setEditForm({ ...editForm, total_amount: parseFloat(e.target.value) || 0 })}
+                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                                />
+                                <p className="text-sm text-gray-600">{totalItems} item(s)</p>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="font-semibold text-gray-900">{formatPrice(transaction.total_amount)}</p>
+                                <p className="text-sm text-gray-600">{totalItems} item(s)</p>
+                              </>
+                            )}
                           </td>
                           <td className="py-4 px-6">
                             {isEditing ? (
@@ -343,6 +318,13 @@ export default function OrdersPage() {
                               {isEditing ? (
                                 <>
                                   <button
+                                    onClick={() => setExpandedId(isExpanded ? null : transaction.transaction_id)}
+                                    className="p-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                                    title={isExpanded ? "Collapse" : "Expand"}
+                                  >
+                                    {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                  </button>
+                                  <button
                                     onClick={() => handleSave(transaction.transaction_id)}
                                     className="p-2 text-white bg-emerald-600 hover:bg-emerald-700 rounded transition-colors"
                                     title="Save"
@@ -353,6 +335,7 @@ export default function OrdersPage() {
                                     onClick={() => {
                                       setEditingId(null);
                                       setEditForm({ status: '' });
+                                      setExpandedId(null);
                                     }}
                                     className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
                                     title="Cancel"
@@ -385,13 +368,6 @@ export default function OrdersPage() {
                                       <DollarSign size={18} />
                                     </button>
                                   )}
-                                  <button
-                                    onClick={() => handleDeleteClick(transaction.transaction_id)}
-                                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                    title="Delete"
-                                  >
-                                    <Trash2 size={18} />
-                                  </button>
                                 </>
                               )}
                             </div>
@@ -399,25 +375,112 @@ export default function OrdersPage() {
                         </tr>
                         {isExpanded && transaction.items && (
                           <tr>
-                            <td colSpan={7} className="px-6 py-4 bg-gray-50">
+                            <td colSpan={6} className="px-6 py-4 bg-gray-50">
                               <div className="space-y-3">
-                                <h4 className="font-semibold text-gray-900 mb-2">Order Items:</h4>
-                                {transaction.items.map((item) => (
-                                  <div key={item.detail_id} className="flex items-center gap-3 p-2 bg-white rounded">
-                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg">
-                                      {getFurnitureEmoji({ name: item.name || '', category: item.category || '' })}
+                                <div className="flex items-center justify-between mb-2">
+                                  <h4 className="font-semibold text-gray-900">Order Items:</h4>
+                                  {isEditing && (
+                                    <div className="flex items-center gap-4">
+                                      <div className="flex items-center gap-2">
+                                        <label className="text-sm font-medium text-gray-700">Payment Method:</label>
+                                        <select
+                                          value={editForm.payment_method || ''}
+                                          onChange={(e) => setEditForm({ ...editForm, payment_method: e.target.value })}
+                                          className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                                        >
+                                          <option value="Credit Card">Credit Card</option>
+                                          <option value="Debit Card">Debit Card</option>
+                                          <option value="PayPal">PayPal</option>
+                                          <option value="Cash">Cash</option>
+                                          <option value="Venmo">Venmo</option>
+                                        </select>
+                                      </div>
                                     </div>
-                                    <div className="flex-1">
-                                      <p className="font-medium text-gray-900">{item.name || 'Unknown Item'}</p>
-                                      <p className="text-sm text-gray-600">
-                                        Quantity: {item.quantity} × {formatPrice(item.price_each)}
+                                  )}
+                                </div>
+                                {transaction.items.map((item) => {
+                                  const editingItem = isEditing && editForm.items?.find(editItem => editItem.detail_id === item.detail_id);
+                                  const displayQuantity = editingItem ? editingItem.quantity : item.quantity;
+                                  const displayPrice = editingItem ? editingItem.price_each : item.price_each;
+                                  
+                                  return (
+                                    <div key={item.detail_id} className="flex items-center gap-3 p-3 bg-white rounded border border-gray-200">
+                                      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg">
+                                        {getFurnitureEmoji({ name: item.name || '', category: item.category || '' })}
+                                      </div>
+                                      <div className="flex-1">
+                                        <p className="font-medium text-gray-900">{item.name || 'Unknown Item'}</p>
+                                        {isEditing ? (
+                                          <div className="flex items-center gap-3 mt-1">
+                                            <div className="flex items-center gap-2">
+                                              <label className="text-sm text-gray-600">Qty:</label>
+                                              <input
+                                                type="number"
+                                                min="1"
+                                                value={displayQuantity}
+                                                onChange={(e) => updateItemField(item.detail_id, 'quantity', parseInt(e.target.value) || 1)}
+                                                className="w-16 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                                              />
+                                            </div>
+                                            <span className="text-gray-400">×</span>
+                                            <div className="flex items-center gap-2">
+                                              <label className="text-sm text-gray-600">Price:</label>
+                                              <input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={displayPrice}
+                                                onChange={(e) => updateItemField(item.detail_id, 'price_each', parseFloat(e.target.value) || 0)}
+                                                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                                              />
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <p className="text-sm text-gray-600">
+                                            Quantity: {displayQuantity} × {formatPrice(displayPrice)}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <p className="font-semibold text-gray-900 min-w-[80px] text-right">
+                                        {formatPrice(displayQuantity * displayPrice)}
                                       </p>
                                     </div>
-                                    <p className="font-semibold text-gray-900">
-                                      {formatPrice(item.quantity * item.price_each)}
-                                    </p>
+                                  );
+                                })}
+                                {/* Order Summary with Tax */}
+                                <div className="mt-4 pt-4 border-t border-gray-200">
+                                  <div className="space-y-2">
+                                    {(() => {
+                                      const subtotal = (transaction.items || []).reduce((sum, item) => {
+                                        const editingItem = isEditing && editForm.items?.find(editItem => editItem.detail_id === item.detail_id);
+                                        const qty = editingItem ? editingItem.quantity : item.quantity;
+                                        const price = editingItem ? editingItem.price_each : item.price_each;
+                                        return sum + (qty * price);
+                                      }, 0);
+                                      // Calculate tax if not present (for old transactions)
+                                      const TAX_RATE = 0.04;
+                                      const taxAmount = transaction.tax_amount !== undefined && transaction.tax_amount !== null
+                                        ? transaction.tax_amount
+                                        : Math.round(subtotal * TAX_RATE * 100) / 100;
+                                      return (
+                                        <>
+                                          <div className="flex justify-between text-gray-700">
+                                            <span>Subtotal:</span>
+                                            <span>{formatPrice(subtotal)}</span>
+                                          </div>
+                                          <div className="flex justify-between text-gray-700">
+                                            <span>Tax (Alabama 4%):</span>
+                                            <span>{formatPrice(taxAmount)}</span>
+                                          </div>
+                                          <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                                            <span className="font-semibold text-gray-900">Total:</span>
+                                            <span className="text-lg font-bold text-emerald-600">{formatPrice(transaction.total_amount)}</span>
+                                          </div>
+                                        </>
+                                      );
+                                    })()}
                                   </div>
-                                ))}
+                                </div>
                                 {isEditing && (
                                   <div className="mt-4 pt-4 border-t border-gray-200">
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -461,18 +524,6 @@ export default function OrdersPage() {
           variant="danger"
           onConfirm={handleRefund}
           onCancel={() => setRefundConfirm({ isOpen: false, transactionId: null })}
-        />
-
-        {/* Delete Confirmation Modal */}
-        <ConfirmModal
-          isOpen={deleteConfirm.isOpen}
-          title="Delete Order"
-          message={`Are you sure you want to delete order #${deleteConfirm.orderId}? Items will be restocked and the order will be permanently removed.`}
-          confirmText="Delete Order"
-          cancelText="Cancel"
-          variant="danger"
-          onConfirm={handleDelete}
-          onCancel={() => setDeleteConfirm({ isOpen: false, transactionId: null })}
         />
       </div>
     </div>

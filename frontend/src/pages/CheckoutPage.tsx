@@ -92,11 +92,16 @@ export default function CheckoutPage() {
 
     // Save order to database and local storage
     if (user && user.customer_id) {
-      // Calculate total from the items being saved to ensure accuracy
-      const orderTotal = cartItemsWithStock.reduce(
+      // Calculate subtotal from the items being saved to ensure accuracy
+      const subtotal = cartItemsWithStock.reduce(
         (total, cartItem) => total + cartItem.item.price * cartItem.quantity,
         0
       );
+      
+      // Calculate tax (Alabama state sales tax: 4%)
+      const TAX_RATE = 0.04;
+      const taxAmount = Math.round(subtotal * TAX_RATE * 100) / 100;
+      const orderTotal = subtotal + taxAmount;
       
       try {
         console.log('Creating transaction for customer:', user.customer_id);
@@ -106,7 +111,7 @@ export default function CheckoutPage() {
           price: cartItem.item.price,
         })));
         
-        // Save to database
+        // Save to database (backend will recalculate tax, but we send the total)
         const transaction = await createTransaction({
           customer_id: user.customer_id,
           items: cartItemsWithStock.map(cartItem => ({
@@ -281,10 +286,18 @@ export default function CheckoutPage() {
                 );
               })}
             </div>
-            <div className="border-t border-gray-200 pt-4">
-              <div className="flex justify-between items-center">
+            <div className="border-t border-gray-200 pt-4 space-y-2">
+              <div className="flex justify-between text-gray-700">
+                <span>Subtotal:</span>
+                <span>{formatPrice(getTotalPrice())}</span>
+              </div>
+              <div className="flex justify-between text-gray-700">
+                <span>Tax (Alabama 4%):</span>
+                <span>{formatPrice(Math.round(getTotalPrice() * 0.04 * 100) / 100)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-gray-200">
                 <span className="text-lg font-semibold text-gray-900">Total:</span>
-                <span className="text-2xl font-bold text-emerald-600">{formatPrice(getTotalPrice())}</span>
+                <span className="text-2xl font-bold text-emerald-600">{formatPrice(getTotalPrice() + Math.round(getTotalPrice() * 0.04 * 100) / 100)}</span>
               </div>
             </div>
           </div>

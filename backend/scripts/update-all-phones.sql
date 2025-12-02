@@ -40,3 +40,4 @@ WHERE phone IS NOT NULL
   AND phone NOT REGEXP '^\\([0-9]{3}\\) [0-9]{3}-[0-9]{4}$';
 
 
+

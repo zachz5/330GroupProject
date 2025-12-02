@@ -167,9 +167,19 @@ export default function CartPage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex justify-between items-center mb-4">
-            <span className="text-lg font-semibold text-gray-900">Total:</span>
-            <span className="text-2xl font-bold text-emerald-600">{formatPrice(getTotalPrice())}</span>
+          <div className="space-y-2 mb-4">
+            <div className="flex justify-between text-gray-700">
+              <span>Subtotal:</span>
+              <span>{formatPrice(getTotalPrice())}</span>
+            </div>
+            <div className="flex justify-between text-gray-700">
+              <span>Tax (Alabama 4%):</span>
+              <span>{formatPrice(Math.round(getTotalPrice() * 0.04 * 100) / 100)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+              <span className="text-lg font-semibold text-gray-900">Total:</span>
+              <span className="text-2xl font-bold text-emerald-600">{formatPrice(getTotalPrice() + Math.round(getTotalPrice() * 0.04 * 100) / 100)}</span>
+            </div>
           </div>
           <button
             onClick={handleCheckout}

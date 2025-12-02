@@ -4,3 +4,4 @@
 ALTER TABLE Furniture 
 ADD COLUMN IF NOT EXISTS emoji VARCHAR(10) NULL AFTER image_url;
 
+

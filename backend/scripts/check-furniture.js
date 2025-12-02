@@ -33,3 +33,4 @@ async function checkFurniture() {
 checkFurniture();
 
 
+

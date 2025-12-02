@@ -154,7 +154,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     
     // Validate stock availability before updating state
     if (newTotalQty > item.quantity) {
-      throw new Error(`Only ${item.quantity} ${item.quantity === 1 ? 'left in stock' : 'left in stock'} — you already have the maximum in your cart.`);
+      throw new Error(`Only ${item.quantity} ${item.quantity === 1 ? 'left in stock' : 'left in stock'} — you already have ${currentCartQty} ${currentCartQty === 1 ? 'in your cart' : 'in your cart'}.`);
     }
     
     // Update state after validation
@@ -194,7 +194,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     
     // Validate stock availability before updating state
     if (quantity > cartItem.item.quantity) {
-      throw new Error(`Only ${cartItem.item.quantity} ${cartItem.item.quantity === 1 ? 'left in stock' : 'left in stock'} — you already have the maximum in your cart.`);
+      throw new Error(`Only ${cartItem.item.quantity} ${cartItem.item.quantity === 1 ? 'left in stock' : 'left in stock'} — you already have ${cartItem.quantity} ${cartItem.quantity === 1 ? 'in your cart' : 'in your cart'}.`);
     }
     
     // Update state after validation

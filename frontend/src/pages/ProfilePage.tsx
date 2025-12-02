@@ -2,7 +2,7 @@ import { useState, useEffect, FormEvent } from 'react';
 import { User, Mail, MapPin, Phone, Edit, X, Save, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from '../components/Link';
-import { getOrdersByCustomer, Order } from '../lib/orders';
+import { getOrdersByCustomer, removeOrder, Order } from '../lib/orders';
 import { getFurnitureEmoji } from '../lib/emojis';
 import { formatPhoneInput, validatePhone } from '../lib/phoneFormatter';
 import { migrateLocalStorageOrders, getCustomerTransactions, Transaction } from '../lib/api';
@@ -16,6 +16,7 @@ export default function ProfilePage() {
   const [databaseOrders, setDatabaseOrders] = useState<Transaction[]>([]);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
@@ -23,98 +24,151 @@ export default function ProfilePage() {
     address: '',
   });
 
-  useEffect(() => {
-    if (user) {
+  const loadOrders = () => {
+    if (!user) {
       setFormData({
-        first_name: user.first_name || '',
-        last_name: user.last_name || '',
-        phone: user.phone || '',
-        address: user.address || '',
+        first_name: '',
+        last_name: '',
+        phone: '',
+        address: '',
       });
+      return;
+    }
+    
+    setFormData({
+      first_name: user.first_name || '',
+      last_name: user.last_name || '',
+      phone: user.phone || '',
+      address: user.address || '',
+    });
+    
+    // Get localStorage orders
+    const localStorageOrders = getOrdersByCustomer(user.email);
+    
+    // Fetch orders from database and migrate localStorage orders
+    if (user.customer_id) {
+      setLoadingOrders(true);
       
-      // Get localStorage orders
-      const localStorageOrders = getOrdersByCustomer(user.email);
-      
-      // Fetch orders from database and migrate localStorage orders
-      if (user.customer_id) {
-        setLoadingOrders(true);
-        
-        // First, fetch database orders
-        getCustomerTransactions(user.customer_id)
-          .then(transactions => {
-            console.log(`Fetched ${transactions.length} transactions from database`);
-            setDatabaseOrders(transactions);
+      // First, fetch database orders
+      getCustomerTransactions(user.customer_id)
+        .then(transactions => {
+          console.log(`Fetched ${transactions.length} transactions from database`);
+          console.log('Transaction details:', transactions.map(t => ({
+            id: t.transaction_id,
+            total: t.total_amount,
+            itemCount: t.items?.length || 0,
+            totalItemQuantity: t.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
+            items: t.items?.map(i => ({ id: i.furniture_id, qty: i.quantity, name: i.name, detail_id: i.detail_id }))
+          })));
+          
+          // Remove duplicate transactions (same transaction_id)
+          const uniqueTransactions = transactions.filter((t, index, self) => 
+            index === self.findIndex(tr => tr.transaction_id === t.transaction_id)
+          );
+          
+          if (uniqueTransactions.length !== transactions.length) {
+            console.warn(`⚠️ Found ${transactions.length - uniqueTransactions.length} duplicate transactions, removing duplicates`);
+          }
+          
+          setDatabaseOrders(uniqueTransactions);
+          
+          // Filter out localStorage orders that have already been migrated
+          // Match by total amount and item count - use pipe separator to avoid issues
+          const unmigratedOrders = localStorageOrders.filter(localOrder => {
+            const localItemCount = localOrder.items.reduce((sum, item) => sum + item.quantity, 0);
+            const localItemIds = localOrder.items.map(item => `${item.item.furniture_id}:${item.quantity}`).sort().join('|');
+            const localTotal = parseFloat(localOrder.total.toString());
             
-            // Filter out localStorage orders that have already been migrated
-            // Match by total amount and item count
+            const isMigrated = uniqueTransactions.some(dbTransaction => {
+              if (!dbTransaction.items || dbTransaction.items.length === 0) return false;
+              
+              const dbItemCount = dbTransaction.items.reduce((sum: number, item: any) => sum + item.quantity, 0);
+              const dbItemIds = dbTransaction.items.map((item: any) => `${item.furniture_id}:${item.quantity}`).sort().join('|');
+              const dbTotal = parseFloat(dbTransaction.total_amount.toString());
+              
+              // More lenient matching: same customer, same total (within 0.01), same item count, and same items
+              const totalMatches = Math.abs(dbTotal - localTotal) < 0.01;
+              const countMatches = dbItemCount === localItemCount;
+              const itemsMatch = dbItemIds === localItemIds;
+              
+              if (totalMatches && countMatches && itemsMatch) {
+                console.log(`✅ Found match: localStorage order ${localOrder.orderId} matches transaction ${dbTransaction.transaction_id}`);
+                return true;
+              }
+              
+              return false;
+            });
+            
+            if (isMigrated) {
+              console.log(`⏭️  Skipping localStorage order ${localOrder.orderId}: Already migrated to database`);
+            }
+            
+            return !isMigrated;
+          });
+          
+          setPreviousOrders(unmigratedOrders);
+          
+          // DISABLED: Automatic migration is creating duplicates
+          // If you need to migrate localStorage orders, do it manually or fix the duplicate detection first
+          // if (unmigratedOrders.length > 0 && !isMigrating) {
+          //   console.log(`Found ${unmigratedOrders.length} unmigrated orders in localStorage, migrating...`);
+          //   setIsMigrating(true);
+          //   return migrateLocalStorageOrders()
+          //     .finally(() => setIsMigrating(false));
+          // }
+          
+          return { success: 0, failed: 0, skipped: 0 };
+        })
+        .then(result => {
+          if (result && result.success > 0) {
+            console.log(`Migration complete: ${result.success} succeeded, ${result.failed} failed, ${result.skipped} skipped`);
+            // Refresh database orders after migration
+            return getCustomerTransactions(user.customer_id);
+          }
+          return null;
+        })
+        .then(transactions => {
+          if (transactions) {
+            // Remove duplicate transactions by transaction_id
+            const uniqueTransactions = transactions.filter((t, index, self) => 
+              index === self.findIndex(tr => tr.transaction_id === t.transaction_id)
+            );
+            setDatabaseOrders(uniqueTransactions);
+            
+            // Re-filter localStorage orders after migration
+            const localStorageOrders = getOrdersByCustomer(user.email);
             const unmigratedOrders = localStorageOrders.filter(localOrder => {
               const localItemCount = localOrder.items.reduce((sum, item) => sum + item.quantity, 0);
-              const localItemIds = localOrder.items.map(item => `${item.item.furniture_id}:${item.quantity}`).sort().join(',');
+              const localItemIds = localOrder.items.map(item => `${item.item.furniture_id}:${item.quantity}`).sort().join('|');
               
-              const isMigrated = transactions.some(dbTransaction => {
+              const isMigrated = uniqueTransactions.some((dbTransaction: Transaction) => {
                 const dbItemCount = dbTransaction.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0;
-                const dbItemIds = dbTransaction.items?.map((item: any) => `${item.furniture_id}:${item.quantity}`).sort().join(',') || '';
+                const dbItemIds = dbTransaction.items?.map((item: any) => `${item.furniture_id}:${item.quantity}`).sort().join('|') || '';
                 
-                return Math.abs(dbTransaction.total_amount - localOrder.total) < 0.01 &&
+                return Math.abs(parseFloat(dbTransaction.total_amount.toString()) - parseFloat(localOrder.total.toString())) < 0.01 &&
                        dbItemCount === localItemCount &&
                        dbItemIds === localItemIds;
               });
               
               return !isMigrated;
             });
-            
             setPreviousOrders(unmigratedOrders);
-            
-            // If there are unmigrated orders, migrate them
-            if (unmigratedOrders.length > 0) {
-              console.log(`Found ${unmigratedOrders.length} unmigrated orders in localStorage, migrating...`);
-              return migrateLocalStorageOrders();
-            }
-            
-            return { success: 0, failed: 0, skipped: 0 };
-          })
-          .then(result => {
-            if (result && result.success > 0) {
-              console.log(`Migration complete: ${result.success} succeeded, ${result.failed} failed, ${result.skipped} skipped`);
-              // Refresh database orders after migration
-              return getCustomerTransactions(user.customer_id);
-            }
-            return null;
-          })
-          .then(transactions => {
-            if (transactions) {
-              setDatabaseOrders(transactions);
-              // Re-filter localStorage orders after migration
-              const localStorageOrders = getOrdersByCustomer(user.email);
-              const unmigratedOrders = localStorageOrders.filter(localOrder => {
-                const localItemCount = localOrder.items.reduce((sum, item) => sum + item.quantity, 0);
-                const localItemIds = localOrder.items.map(item => `${item.item.furniture_id}:${item.quantity}`).sort().join(',');
-                
-                const isMigrated = transactions.some((dbTransaction: Transaction) => {
-                  const dbItemCount = dbTransaction.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0;
-                  const dbItemIds = dbTransaction.items?.map((item: any) => `${item.furniture_id}:${item.quantity}`).sort().join(',') || '';
-                  
-                  return Math.abs(dbTransaction.total_amount - localOrder.total) < 0.01 &&
-                         dbItemCount === localItemCount &&
-                         dbItemIds === localItemIds;
-                });
-                
-                return !isMigrated;
-              });
-              setPreviousOrders(unmigratedOrders);
-            }
-            setLoadingOrders(false);
-          })
-          .catch(err => {
-            console.error('❌ Failed to fetch/migrate orders:', err);
-            setLoadingOrders(false);
-          });
-      } else {
-        // No customer_id, just show localStorage orders
-        setPreviousOrders(localStorageOrders);
-      }
+          }
+          setLoadingOrders(false);
+        })
+        .catch(err => {
+          console.error('❌ Failed to fetch/migrate orders:', err);
+          setLoadingOrders(false);
+        });
+    } else {
+      // No customer_id, just show localStorage orders
+      setPreviousOrders(localStorageOrders);
     }
-  }, [user]);
+  };
+
+  useEffect(() => {
+    loadOrders();
+  }, [user?.customer_id]); // Only reload when customer_id changes, not on every user object change
 
   if (!user) {
     return (
@@ -297,7 +351,16 @@ export default function ProfilePage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">Your Orders</h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-gray-900">Your Orders</h2>
+            <button
+              onClick={loadOrders}
+              disabled={loadingOrders}
+              className="text-sm text-emerald-600 hover:text-emerald-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loadingOrders ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
 
           {loadingOrders ? (
             <p className="text-gray-600">Loading orders...</p>
@@ -341,8 +404,8 @@ export default function ProfilePage() {
                     {expandedOrder === `db-${transaction.transaction_id}` && transaction.items && (
                       <div className="border-t border-gray-200 p-4 bg-gray-50">
                         <div className="space-y-2 mb-4">
-                          {transaction.items.map((orderItem) => (
-                            <div key={orderItem.furniture_id} className="flex items-center gap-3">
+                          {transaction.items.map((orderItem, index) => (
+                            <div key={`${transaction.transaction_id}-${orderItem.detail_id || orderItem.furniture_id}-${index}`} className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg flex-shrink-0">
                                 {getFurnitureEmoji({ name: orderItem.name || '', category: orderItem.category || '' })}
                               </div>
@@ -361,6 +424,20 @@ export default function ProfilePage() {
                         <div className="pt-4 border-t border-gray-200">
                           <p className="text-sm text-gray-600 mb-1">Payment Method:</p>
                           <p className="text-sm text-gray-900">{transaction.payment_method}</p>
+                        </div>
+                        <div className="pt-4 border-t border-amber-200">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm('Remove this localStorage order? It may have already been migrated to the database.')) {
+                                removeOrder(order.orderId);
+                                loadOrders(); // Reload to refresh the list
+                              }
+                            }}
+                            className="text-xs text-amber-700 hover:text-amber-900 underline"
+                          >
+                            Remove from localStorage
+                          </button>
                         </div>
                       </div>
                     )}
@@ -383,6 +460,7 @@ export default function ProfilePage() {
                       <div className="flex items-center gap-4 flex-1">
                         <div>
                           <p className="font-semibold text-gray-900">Order {order.orderId}</p>
+                          <p className="text-xs text-amber-600 mb-1">⚠️ Not yet migrated to database</p>
                           <p className="text-sm text-gray-600">
                             {new Date(order.date).toLocaleDateString('en-US', {
                               year: 'numeric',
@@ -435,6 +513,23 @@ export default function ProfilePage() {
                             <p className="text-sm text-gray-900 capitalize">{order.paymentMethod}</p>
                           </div>
                         )}
+                        <div className="pt-4 border-t border-amber-200">
+                          <p className="text-xs text-amber-700 mb-2">
+                            This order is stored in your browser's localStorage. If it has been migrated to the database, you can remove it from localStorage.
+                          </p>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm('Remove this localStorage order? It may have already been migrated to the database.')) {
+                                removeOrder(order.orderId);
+                                loadOrders(); // Reload to refresh the list
+                              }
+                            }}
+                            className="text-xs text-amber-700 hover:text-amber-900 underline"
+                          >
+                            Remove from localStorage
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

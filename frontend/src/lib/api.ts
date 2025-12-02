@@ -72,6 +72,20 @@ export async function register(
   });
 }
 
+export async function registerEmployee(
+  email: string,
+  password: string,
+  first_name?: string,
+  last_name?: string,
+  phone?: string,
+  employee_code?: string
+) {
+  return request<User>('/auth/register-employee', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, first_name, last_name, phone, employee_code }),
+  });
+}
+
 export async function login(email: string, password: string) {
   const user = await request<User>('/auth/login', {
     method: 'POST',
@@ -228,6 +242,23 @@ export async function updateTransactionStatus(
   });
 }
 
+export async function updateTransactionDetails(
+  transactionId: number,
+  updates: {
+    status?: string;
+    notes?: string;
+    items?: Array<{ detail_id: number; quantity: number; price_each: number }>;
+    total_amount?: number;
+    payment_method?: string;
+    shipping_address?: string;
+  }
+): Promise<Transaction> {
+  return request<Transaction>(`/transactions/${transactionId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
 export async function deleteTransaction(transactionId: number): Promise<void> {
   return request<void>(`/transactions/${transactionId}`, {
     method: 'DELETE',
@@ -255,8 +286,10 @@ export interface Transaction {
   customer_id: number;
   transaction_date: string;
   total_amount: number;
+  tax_amount?: number;
   payment_method: string;
   status: string;
+  shipping_address?: string;
   customer_email?: string;
   first_name?: string;
   last_name?: string;
@@ -346,26 +379,48 @@ export async function migrateLocalStorageOrders(): Promise<{ success: number; fa
       try {
         const existingTransactions = await getCustomerTransactions(customerId);
         const orderItemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
-        const orderItemIds = order.items.map(item => `${item.item.furniture_id}:${item.quantity}`).sort().join(',');
+        // Create a more detailed item signature that includes all items with their quantities
+        const orderItemSignature = order.items
+          .map(item => `${item.item.furniture_id}:${item.quantity}`)
+          .sort()
+          .join('|');
         
+        // Check ALL transactions for this customer, not just recent ones
         const matchingTransaction = existingTransactions.find(t => {
-          const tItemCount = t.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0;
-          const tItemIds = t.items?.map((item: any) => `${item.furniture_id}:${item.quantity}`).sort().join(',') || '';
+          if (!t.items || t.items.length === 0) return false;
+          
+          const tItemCount = t.items.reduce((sum: number, item: any) => sum + item.quantity, 0);
+          const tItemSignature = t.items
+            .map((item: any) => `${item.furniture_id}:${item.quantity}`)
+            .sort()
+            .join('|');
           
           // Match if: same total amount, same item count, and same items (furniture_id:quantity pairs)
-          return Math.abs(t.total_amount - order.total) < 0.01 && 
-                 tItemCount === orderItemCount &&
-                 tItemIds === orderItemIds;
+          const totalMatches = Math.abs(parseFloat(t.total_amount.toString()) - parseFloat(order.total.toString())) < 0.01;
+          const countMatches = tItemCount === orderItemCount;
+          const itemsMatch = tItemSignature === orderItemSignature;
+          
+          if (totalMatches && countMatches && itemsMatch) {
+            console.log(`   ✅ Match found: Transaction ${t.transaction_id} matches order ${order.orderId}`);
+            return true;
+          }
+          
+          return false;
         });
         
         if (matchingTransaction) {
           console.log(`⏭️  Skipping order ${order.orderId}: Already exists as transaction ${matchingTransaction.transaction_id} (same total: $${order.total}, same items)`);
           skipped++;
           continue;
+        } else {
+          console.log(`   ℹ️  No matching transaction found for order ${order.orderId}, will create new transaction`);
         }
       } catch (err) {
-        // If we can't check, proceed anyway
-        console.log(`   (Could not check for duplicates, proceeding...)`);
+        // If we can't check, DON'T proceed - this could create duplicates
+        console.error(`   ❌ Could not check for duplicates for order ${order.orderId}:`, err);
+        console.log(`   ⚠️  Skipping this order to prevent duplicates`);
+        failed++;
+        continue;
       }
       
       console.log(`🔄 Migrating order ${order.orderId} for customer ${customerId} (${order.customerEmail})...`);

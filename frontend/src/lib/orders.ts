@@ -46,4 +46,11 @@ export function getOrdersByCustomer(email: string): Order[] {
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
+export function removeOrder(orderId: string): void {
+  const orders = getOrders();
+  const filtered = orders.filter(order => order.orderId !== orderId);
+  localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(filtered));
+}
+
+
 

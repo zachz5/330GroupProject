@@ -1,7 +1,10 @@
 import { ArrowRight, DollarSign, Recycle, Truck } from 'lucide-react';
 import { Link } from '../components/Link';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function HomePage() {
+  const { user } = useAuth();
+  
   return (
     <div className="min-h-screen bg-white">
       <section className="bg-gradient-to-br from-emerald-50 to-teal-50 py-20 px-4">
@@ -13,13 +16,15 @@ export default function HomePage() {
             Find quality used furniture perfect for your dorm or apartment.
             Buy sustainably, save money, and furnish your space with ease.
           </p>
-          <Link
-            to="/browse"
-            className="inline-flex items-center gap-2 bg-emerald-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-emerald-700 transition-colors"
-          >
-            Browse Furniture
-            <ArrowRight size={20} />
-          </Link>
+          {!user?.isEmployee && (
+            <Link
+              to="/browse"
+              className="inline-flex items-center gap-2 bg-emerald-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-emerald-700 transition-colors"
+            >
+              Browse Furniture
+              <ArrowRight size={20} />
+            </Link>
+          )}
         </div>
       </section>
 
