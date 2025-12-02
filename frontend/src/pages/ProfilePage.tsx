@@ -178,6 +178,19 @@ export default function ProfilePage() {
     return order.items.reduce((total, orderItem) => total + orderItem.quantity, 0);
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Completed': return 'bg-green-100 text-green-800';
+      case 'Delivered': return 'bg-emerald-100 text-emerald-800';
+      case 'Shipped': return 'bg-blue-100 text-blue-800';
+      case 'Processing': return 'bg-yellow-100 text-yellow-800';
+      case 'Pending': return 'bg-gray-100 text-gray-800';
+      case 'Cancelled': return 'bg-red-100 text-red-800';
+      case 'Refunded': return 'bg-orange-100 text-orange-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
@@ -317,7 +330,14 @@ export default function ProfilePage() {
                     >
                       <div className="flex items-center gap-4 flex-1">
                         <div>
-                          <p className="font-semibold text-gray-900">Order #{transaction.transaction_id}</p>
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="font-semibold text-gray-900">Order #{transaction.transaction_id}</p>
+                            {transaction.status && (
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(transaction.status)}`}>
+                                {transaction.status}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-sm text-gray-600">
                             {new Date(transaction.transaction_date).toLocaleDateString('en-US', {
                               year: 'numeric',

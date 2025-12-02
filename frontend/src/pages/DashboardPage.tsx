@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, ShoppingCart, Package, AlertTriangle } from 'lucide-react';
-import { getItems } from '../lib/api';
+import { getItems, getAllCustomers, getAllTransactions } from '../lib/api';
 
 interface DashboardStats {
   totalUsers: number;
@@ -26,28 +26,52 @@ export default function DashboardPage() {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const { getAllCustomers, getAllTransactions } = await import('../lib/api');
       
-      const [items, customers, transactions] = await Promise.all([
-        getItems(),
-        getAllCustomers().catch(() => []),
-        getAllTransactions().catch(() => []),
-      ]);
+      // Fetch all data in parallel with individual error handling
+      let itemsArray: any[] = [];
+      let customersArray: any[] = [];
+      let transactionsArray: any[] = [];
       
-      const lowStock = items.filter(item => item.quantity < 5);
+      try {
+        const items = await getItems();
+        itemsArray = Array.isArray(items) ? items : [];
+      } catch (err) {
+        console.error('Failed to load items:', err);
+      }
+      
+      try {
+        const customers = await getAllCustomers();
+        customersArray = Array.isArray(customers) ? customers : [];
+      } catch (err) {
+        console.error('Failed to load customers:', err);
+      }
+      
+      try {
+        const transactions = await getAllTransactions();
+        transactionsArray = Array.isArray(transactions) ? transactions : [];
+      } catch (err) {
+        console.error('Failed to load transactions:', err);
+      }
+      
+      const lowStock = itemsArray.filter(item => item && typeof item.quantity === 'number' && item.quantity < 5);
       
       setLowStockAlerts(lowStock.map(item => ({
         id: item.furniture_id,
-        name: item.name,
-        quantity: item.quantity,
+        name: item.name || 'Unknown Item',
+        quantity: item.quantity || 0,
       })));
 
+      // Calculate orders awaiting shipment - ensure status field exists
+      const awaitingShipment = transactionsArray.filter((t: any) => {
+        if (!t || typeof t !== 'object') return false;
+        const status = t.status;
+        return status === 'Pending' || status === 'Processing';
+      }).length;
+
       setStats({
-        totalUsers: customers.length,
-        totalOrders: transactions.length,
-        ordersAwaitingShipment: transactions.filter((t: any) => 
-          t.status === 'Pending' || t.status === 'Processing'
-        ).length,
+        totalUsers: customersArray.length,
+        totalOrders: transactionsArray.length,
+        ordersAwaitingShipment: awaitingShipment,
         lowStockItems: lowStock.length,
       });
     } catch (err) {

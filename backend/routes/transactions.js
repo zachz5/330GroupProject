@@ -39,7 +39,7 @@ router.post('/', async (req, res, next) => {
       // Create transaction record
       const [transactionResult] = await connection.execute(
         `INSERT INTO Customer_Purchase_Transaction (customer_id, transaction_date, total_amount, payment_method, status)
-         VALUES (?, NOW(), ?, ?, 'Completed')`,
+         VALUES (?, NOW(), ?, ?, 'Processing')`,
         [customer_id, total_amount, normalizedPaymentMethod]
       );
       

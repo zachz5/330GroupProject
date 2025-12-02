@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, X, Save, Search } from 'lucide-react';
-import { getItems, deleteItem, updateItem, Item } from '../lib/api';
+import { getItems, deleteItem, updateItem, createItem, Item } from '../lib/api';
 import { getFurnitureEmoji } from '../lib/emojis';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function InventoryPage() {
+  const { user } = useAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -13,6 +15,15 @@ export default function InventoryPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<Item>>({});
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isCreating, setIsCreating] = useState(false);
+  const [newItemForm, setNewItemForm] = useState<Partial<Item>>({
+    name: '',
+    category: '',
+    description: '',
+    price: 0,
+    condition_status: 'Good',
+    quantity: 0,
+  });
 
   useEffect(() => {
     loadItems();
@@ -112,6 +123,65 @@ export default function InventoryPage() {
     setEditForm({});
   };
 
+  const handleCreateNew = () => {
+    setIsCreating(true);
+    setNewItemForm({
+      name: '',
+      category: '',
+      description: '',
+      price: 0,
+      condition_status: 'Good',
+      quantity: 0,
+    });
+    setError('');
+  };
+
+  const handleCancelCreate = () => {
+    setIsCreating(false);
+    setNewItemForm({
+      name: '',
+      category: '',
+      description: '',
+      price: 0,
+      condition_status: 'Good',
+      quantity: 0,
+    });
+    setError('');
+  };
+
+  const handleSaveNew = async () => {
+    if (!newItemForm.name || !newItemForm.price) {
+      setError('Name and price are required');
+      return;
+    }
+
+    try {
+      const newItem = await createItem({
+        name: newItemForm.name!,
+        category: newItemForm.category || undefined,
+        description: newItemForm.description || undefined,
+        price: newItemForm.price!,
+        condition_status: newItemForm.condition_status || 'Good',
+        quantity: newItemForm.quantity || 0,
+        image_url: newItemForm.image_url || undefined,
+        added_by_employee_id: user?.employee_id,
+      });
+      setItems([newItem, ...items]);
+      setIsCreating(false);
+      setNewItemForm({
+        name: '',
+        category: '',
+        description: '',
+        price: 0,
+        condition_status: 'Good',
+        quantity: 0,
+      });
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create item');
+    }
+  };
+
   const formatPrice = (price: number | string) => {
     const numPrice = typeof price === 'string' ? parseFloat(price) : price;
     return `$${numPrice.toFixed(2)}`;
@@ -129,8 +199,10 @@ export default function InventoryPage() {
     return 'bg-green-100 text-green-800';
   };
 
-  const getConditionColor = (condition: string) => {
-    switch (condition) {
+  const getConditionColor = (condition: string | undefined | null) => {
+    if (!condition) return 'bg-gray-100 text-gray-800';
+    const normalized = condition.trim();
+    switch (normalized) {
       case 'New': return 'bg-blue-100 text-blue-800';
       case 'Like New': return 'bg-green-100 text-green-800';
       case 'Good': return 'bg-emerald-100 text-emerald-800';
@@ -145,7 +217,10 @@ export default function InventoryPage() {
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Inventory Management</h1>
-          <button className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-emerald-700 transition-colors">
+          <button 
+            onClick={handleCreateNew}
+            className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-emerald-700 transition-colors"
+          >
             <Plus size={20} />
             Add New Item
           </button>
@@ -210,10 +285,123 @@ export default function InventoryPage() {
           </div>
         )}
 
+        {/* Create New Item Form */}
+        {isCreating && (
+          <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border-2 border-emerald-200">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Add New Item</h2>
+              <button
+                onClick={handleCancelCreate}
+                className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+                title="Cancel"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Item Name *</label>
+                <input
+                  type="text"
+                  value={newItemForm.name || ''}
+                  onChange={(e) => setNewItemForm({ ...newItemForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  placeholder="Enter item name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <input
+                  type="text"
+                  value={newItemForm.category || ''}
+                  onChange={(e) => setNewItemForm({ ...newItemForm, category: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  placeholder="e.g., Furniture, Bedding, Lighting"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Price *</label>
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-500">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newItemForm.price || 0}
+                    onChange={(e) => setNewItemForm({ ...newItemForm, price: parseFloat(e.target.value) || 0 })}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                    min="0"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  value={newItemForm.quantity || 0}
+                  onChange={(e) => setNewItemForm({ ...newItemForm, quantity: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  min="0"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Condition</label>
+                <select
+                  value={newItemForm.condition_status || 'Good'}
+                  onChange={(e) => setNewItemForm({ ...newItemForm, condition_status: e.target.value as Item['condition_status'] })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                >
+                  <option value="New">New</option>
+                  <option value="Like New">Like New</option>
+                  <option value="Good">Good</option>
+                  <option value="Fair">Fair</option>
+                  <option value="Poor">Poor</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
+                <input
+                  type="text"
+                  value={newItemForm.image_url || ''}
+                  onChange={(e) => setNewItemForm({ ...newItemForm, image_url: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  placeholder="https://example.com/image.jpg"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={newItemForm.description || ''}
+                  onChange={(e) => setNewItemForm({ ...newItemForm, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  rows={3}
+                  placeholder="Enter item description"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                onClick={handleCancelCreate}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveNew}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2"
+              >
+                <Save size={18} />
+                Create Item
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           {loading ? (
             <div className="text-center py-12 text-gray-600">Loading inventory...</div>
-          ) : items.length === 0 ? (
+          ) : items.length === 0 && !isCreating ? (
             <div className="text-center py-12 text-gray-600">No items in inventory.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -288,7 +476,7 @@ export default function InventoryPage() {
                       <td className="py-4 px-6">
                         {isEditing ? (
                           <select
-                            value={editForm.condition_status || 'Good'}
+                            value={editForm.condition_status ?? item.condition_status}
                             onChange={(e) => setEditForm({ ...editForm, condition_status: e.target.value as Item['condition_status'] })}
                             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
                           >

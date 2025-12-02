@@ -31,8 +31,10 @@ export default function BrowsePage() {
   };
 
   const filteredItems = items.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch = item.name.toLowerCase().includes(searchLower) ||
+      (item.description?.toLowerCase().includes(searchLower) ?? false) ||
+      item.condition_status.toLowerCase().includes(searchLower);
     const matchesCategory = !categoryFilter || item.category === categoryFilter;
     const matchesCondition = !conditionFilter || item.condition_status === conditionFilter;
     return matchesSearch && matchesCategory && matchesCondition;
@@ -95,6 +97,19 @@ export default function BrowsePage() {
   const formatPrice = (price: number | string) => {
     const numPrice = typeof price === 'string' ? parseFloat(price) : price;
     return `$${numPrice.toFixed(2)}`;
+  };
+
+  const getConditionColor = (condition: string | undefined | null) => {
+    if (!condition) return 'bg-gray-100 text-gray-800';
+    const normalized = condition.trim();
+    switch (normalized) {
+      case 'New': return 'bg-blue-100 text-blue-800';
+      case 'Like New': return 'bg-green-100 text-green-800';
+      case 'Good': return 'bg-emerald-100 text-emerald-800';
+      case 'Fair': return 'bg-yellow-100 text-yellow-800';
+      case 'Poor': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
   };
 
   return (
@@ -171,6 +186,11 @@ export default function BrowsePage() {
                   <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">
                     {item.name}
                   </h3>
+                  <div className="mb-2">
+                    <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getConditionColor(item.condition_status)}`}>
+                      {item.condition_status}
+                    </span>
+                  </div>
                   <p className="text-emerald-600 font-bold text-lg mb-4">
                     {formatPrice(item.price)}
                   </p>

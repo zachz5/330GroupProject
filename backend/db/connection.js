@@ -48,14 +48,18 @@ function getDbConfig() {
 const dbConfig = getDbConfig();
 
 // Create connection pool
-// Reduced limit to 5 to stay well under database max_user_connections limit of 10
+// Reduced limit to 3 to stay well under database max_user_connections limit of 10
+// This prevents hitting the limit if multiple server instances are running
 export const pool = mysql.createPool({
   ...dbConfig,
   waitForConnections: true,
-  connectionLimit: 5,
-  queueLimit: 0,
+  connectionLimit: 3,
+  queueLimit: 10,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
+  acquireTimeout: 60000, // 60 seconds to acquire connection
+  timeout: 60000, // 60 seconds query timeout
+  reconnect: true,
 });
 
 // Test connection
@@ -66,6 +70,9 @@ pool.getConnection()
   })
   .catch((err) => {
     console.error('❌ Database connection failed:', err.message);
+    if (err.code === 'ER_TOO_MANY_USER_CONNECTIONS' || err.message.includes('max_user_connections')) {
+      console.error('⚠️  Connection limit exceeded. Check for multiple server instances or connection leaks.');
+    }
   });
 
 export default pool;

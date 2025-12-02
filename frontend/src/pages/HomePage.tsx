@@ -58,7 +58,7 @@ export default function HomePage() {
                 Easy Pick-up & Delivery
               </h3>
               <p className="text-gray-600">
-                Convenient options to get your furniture to your door or arrange local pickup.
+                Convenient options to get your furniture to your door.
               </p>
             </div>
           </div>

@@ -65,9 +65,49 @@ router.put('/:id', async (req, res, next) => {
     const { id } = req.params;
     const { name, category, description, price, condition_status, quantity, image_url } = req.body;
     
+    // Build dynamic UPDATE query with only provided fields
+    const updates = [];
+    const values = [];
+    
+    if (name !== undefined) {
+      updates.push('name = ?');
+      values.push(name);
+    }
+    if (category !== undefined) {
+      updates.push('category = ?');
+      values.push(category || null);
+    }
+    if (description !== undefined) {
+      updates.push('description = ?');
+      values.push(description || null);
+    }
+    if (price !== undefined) {
+      updates.push('price = ?');
+      values.push(price);
+    }
+    if (condition_status !== undefined) {
+      updates.push('condition_status = ?');
+      values.push(condition_status);
+    }
+    if (quantity !== undefined) {
+      updates.push('quantity = ?');
+      values.push(quantity);
+    }
+    if (image_url !== undefined) {
+      updates.push('image_url = ?');
+      values.push(image_url || null);
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+    
+    // Add id to values array for WHERE clause
+    values.push(id);
+    
     const [result] = await pool.execute(
-      'UPDATE Furniture SET name = ?, category = ?, description = ?, price = ?, condition_status = ?, quantity = ?, image_url = ? WHERE furniture_id = ?',
-      [name, category, description, price, condition_status, quantity, image_url, id]
+      `UPDATE Furniture SET ${updates.join(', ')} WHERE furniture_id = ?`,
+      values
     );
     
     if (result.affectedRows === 0) {
