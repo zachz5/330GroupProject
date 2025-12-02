@@ -1,12 +1,13 @@
 import express from 'express';
 import { pool } from '../db/connection.js';
+import { formatPhone } from '../utils/phoneFormatter.js';
 
 const router = express.Router();
 
 // GET all employees
 router.get('/', async (req, res, next) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM employee ORDER BY employee_id DESC');
+    const [rows] = await pool.execute('SELECT * FROM Employee ORDER BY employee_id DESC');
     res.json(rows);
   } catch (error) {
     next(error);
@@ -24,7 +25,7 @@ router.post('/', async (req, res, next) => {
     
     // Check if employee already exists
     const [existingEmployees] = await pool.execute(
-      'SELECT employee_id FROM employee WHERE email = ?',
+      'SELECT employee_id FROM Employee WHERE email = ?',
       [email]
     );
     
@@ -32,20 +33,23 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Employee with this email already exists' });
     }
     
+    // Format phone number
+    const formattedPhone = phone ? formatPhone(phone) : null;
+    
     const [result] = await pool.execute(
-      'INSERT INTO employee (first_name, last_name, email, phone, role, hire_date) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO Employee (first_name, last_name, email, phone, role, hire_date) VALUES (?, ?, ?, ?, ?, ?)',
       [
         first_name || null,
         last_name || null,
         email,
-        phone || null,
+        formattedPhone,
         role || null,
         hire_date || new Date().toISOString().split('T')[0]
       ]
     );
     
     const [newEmployee] = await pool.execute(
-      'SELECT * FROM employee WHERE employee_id = ?',
+      'SELECT * FROM Employee WHERE employee_id = ?',
       [result.insertId]
     );
     
@@ -59,7 +63,7 @@ router.post('/', async (req, res, next) => {
 router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const [result] = await pool.execute('DELETE FROM employee WHERE employee_id = ?', [id]);
+    const [result] = await pool.execute('DELETE FROM Employee WHERE employee_id = ?', [id]);
     
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Employee not found' });

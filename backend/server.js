@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import itemsRoutes from './routes/items.js';
 import authRoutes from './routes/auth.js';
 import employeesRoutes from './routes/employees.js';
+import transactionsRoutes from './routes/transactions.js';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/items', itemsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/employees', employeesRoutes);
+app.use('/api/transactions', transactionsRoutes);
 
 // Root route
 app.get('/', (req, res) => {
@@ -54,6 +56,7 @@ app.get('/api/health', (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
+  console.error('Error stack:', err.stack);
   res.status(err.status || 500).json({
     error: err.message || 'Internal server error',
   });
