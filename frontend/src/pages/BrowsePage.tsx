@@ -171,6 +171,11 @@ export default function BrowsePage() {
                   <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">
                     {item.name}
                   </h3>
+                  {item.description && (
+                    <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                      {item.description}
+                    </p>
+                  )}
                   <p className="text-emerald-600 font-bold text-lg mb-2">
                     {formatPrice(item.price)}
                   </p>
