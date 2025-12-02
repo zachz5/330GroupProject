@@ -46,3 +46,4 @@ WHERE phone IS NOT NULL
   AND SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE(phone, '(', ''), ')', ''), '-', ''), ' ', ''), 1, 1) = '1'
   AND phone NOT REGEXP '^\\([0-9]{3}\\) [0-9]{3}-[0-9]{4}$';
 
+

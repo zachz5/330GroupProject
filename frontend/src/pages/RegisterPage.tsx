@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { Link } from '../components/Link';
 import { useAuth } from '../contexts/AuthContext';
+import { formatPhoneInput, validatePhone } from '../lib/phoneFormatter';
 
 export default function RegisterPage() {
   const [firstName, setFirstName] = useState('');
@@ -25,6 +26,11 @@ export default function RegisterPage() {
 
     if (password.length < 6) {
       setError('Password must be at least 6 characters');
+      return;
+    }
+
+    if (phone && !validatePhone(phone)) {
+      setError('Phone number must be in format (XXX) XXX-XXXX');
       return;
     }
 
@@ -143,8 +149,9 @@ export default function RegisterPage() {
               <input
                 type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => setPhone(formatPhoneInput(e.target.value))}
                 placeholder="(555) 123-4567"
+                maxLength={14}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
               />
             </div>

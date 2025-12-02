@@ -33,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userData = await loginAPI(email, password);
     setUser(userData);
     localStorage.setItem('user', JSON.stringify(userData));
+    return userData;
   };
 
   const register = async (
@@ -50,7 +51,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateProfile = async (updates: Partial<Omit<User, 'customer_id' | 'email' | 'date_registered'>>) => {
     if (!user) throw new Error('No user logged in');
-    const updatedUser = await updateProfileAPI(user.customer_id, updates);
+    if (!user.customer_id) throw new Error('Invalid user: missing customer_id');
+    // Include email in the update request for verification
+    const updatedUser = await updateProfileAPI(user.customer_id, { ...updates, email: user.email });
     setUser(updatedUser);
     localStorage.setItem('user', JSON.stringify(updatedUser));
   };

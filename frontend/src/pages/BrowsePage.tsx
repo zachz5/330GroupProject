@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getItems, Item } from '../lib/api';
 import { Link } from '../components/Link';
+import { getFurnitureEmoji } from '../lib/emojis';
 
 export default function BrowsePage() {
   const [items, setItems] = useState<Item[]>([]);
@@ -10,6 +11,8 @@ export default function BrowsePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [conditionFilter, setConditionFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
 
   useEffect(() => {
     loadItems();
@@ -34,6 +37,60 @@ export default function BrowsePage() {
     const matchesCondition = !conditionFilter || item.condition_status === conditionFilter;
     return matchesSearch && matchesCategory && matchesCondition;
   });
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, categoryFilter, conditionFilter]);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedItems = filteredItems.slice(startIndex, endIndex);
+
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxVisible = 5;
+    
+    if (totalPages <= maxVisible) {
+      // Show all pages if total is less than max visible
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Show first page
+      pages.push(1);
+      
+      if (currentPage > 3) {
+        pages.push('...');
+      }
+      
+      // Show pages around current page
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+      
+      if (currentPage < totalPages - 2) {
+        pages.push('...');
+      }
+      
+      // Show last page
+      pages.push(totalPages);
+    }
+    
+    return pages;
+  };
 
   const formatPrice = (price: number | string) => {
     const numPrice = typeof price === 'string' ? parseFloat(price) : price;
@@ -96,13 +153,18 @@ export default function BrowsePage() {
           <div className="text-center py-12 text-gray-600">No furniture items found.</div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-            {filteredItems.map((item) => (
+            {paginatedItems.map((item) => {
+              const isOutOfStock = item.quantity === 0;
+              return (
               <div key={item.furniture_id} className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-                <div className="aspect-square bg-gray-200 flex items-center justify-center text-gray-400">
-                  {item.image_url ? (
-                    <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-sm">No Image</span>
+                <div className="aspect-square bg-gray-100 flex items-center justify-center relative">
+                  <span className="text-6xl">{getFurnitureEmoji(item)}</span>
+                  {isOutOfStock && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="bg-red-600 text-white font-bold text-xl px-6 py-2 rounded shadow-lg transform -rotate-12">
+                        SOLD OUT!
+                      </div>
+                    </div>
                   )}
                 </div>
                 <div className="p-4">
@@ -114,27 +176,65 @@ export default function BrowsePage() {
                   </p>
                   <Link
                     to={`/item?id=${item.furniture_id}`}
-                    className="block w-full text-center bg-emerald-600 text-white py-2 rounded-lg hover:bg-emerald-700 transition-colors"
+                    className={`block w-full text-center py-2 rounded-lg transition-colors ${
+                      isOutOfStock
+                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
                   >
                     View Item
                   </Link>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
 
-        <div className="flex items-center justify-center gap-2">
-          <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-            <ChevronLeft size={20} />
-          </button>
-          <button className="px-4 py-2 bg-emerald-600 text-white rounded-lg">1</button>
-          <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">2</button>
-          <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">3</button>
-          <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-            <ChevronRight size={20} />
-          </button>
-        </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            
+            {getPageNumbers().map((page, index) => {
+              if (page === '...') {
+                return (
+                  <span key={`ellipsis-${index}`} className="px-2 text-gray-400">
+                    ...
+                  </span>
+                );
+              }
+              
+              const pageNum = page as number;
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => handlePageChange(pageNum)}
+                  className={`px-4 py-2 rounded-lg transition-colors ${
+                    currentPage === pageNum
+                      ? 'bg-emerald-600 text-white'
+                      : 'border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+            
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

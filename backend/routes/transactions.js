@@ -105,29 +105,57 @@ router.get('/customer/:customerId', async (req, res, next) => {
   try {
     const { customerId } = req.params;
     
+    // Use a single query with JOINs to get all data at once, avoiding multiple concurrent connections
     const [transactions] = await pool.execute(
-      `SELECT * FROM Customer_Purchase_Transaction 
-       WHERE customer_id = ? 
-       ORDER BY transaction_date DESC`,
+      `SELECT 
+         t.*,
+         td.detail_id,
+         td.furniture_id,
+         td.quantity,
+         td.price_each,
+         f.name as item_name,
+         f.category as item_category
+       FROM Customer_Purchase_Transaction t
+       LEFT JOIN Transaction_Details td ON t.transaction_id = td.transaction_id
+       LEFT JOIN Furniture f ON td.furniture_id = f.furniture_id
+       WHERE t.customer_id = ?
+       ORDER BY t.transaction_date DESC, td.detail_id`,
       [customerId]
     );
     
-    // Get details for each transaction
-    const transactionsWithDetails = await Promise.all(
-      transactions.map(async (transaction) => {
-        const [details] = await pool.execute(
-          `SELECT td.*, f.name, f.category 
-           FROM Transaction_Details td
-           JOIN Furniture f ON td.furniture_id = f.furniture_id
-           WHERE td.transaction_id = ?`,
-          [transaction.transaction_id]
-        );
-        return {
-          ...transaction,
-          items: details
-        };
-      })
-    );
+    // Group transactions and their details
+    const transactionsMap = new Map();
+    
+    transactions.forEach(row => {
+      const transactionId = row.transaction_id;
+      
+      if (!transactionsMap.has(transactionId)) {
+        transactionsMap.set(transactionId, {
+          transaction_id: row.transaction_id,
+          customer_id: row.customer_id,
+          transaction_date: row.transaction_date,
+          total_amount: row.total_amount,
+          payment_method: row.payment_method,
+          status: row.status,
+          items: []
+        });
+      }
+      
+      // Add item details if they exist
+      if (row.detail_id) {
+        transactionsMap.get(transactionId).items.push({
+          detail_id: row.detail_id,
+          transaction_id: row.transaction_id,
+          furniture_id: row.furniture_id,
+          quantity: row.quantity,
+          price_each: row.price_each,
+          name: row.item_name,
+          category: row.item_category
+        });
+      }
+    });
+    
+    const transactionsWithDetails = Array.from(transactionsMap.values());
     
     res.json(transactionsWithDetails);
   } catch (error) {
@@ -169,29 +197,62 @@ router.get('/:transactionId', async (req, res, next) => {
 // GET all transactions (for admin/employee use)
 router.get('/', async (req, res, next) => {
   try {
+    // Use a single query with JOINs to get all data at once, avoiding multiple concurrent connections
     const [transactions] = await pool.execute(
-      `SELECT t.*, c.email as customer_email, c.first_name, c.last_name
+      `SELECT 
+         t.*, 
+         c.email as customer_email, 
+         c.first_name, 
+         c.last_name,
+         td.detail_id,
+         td.furniture_id,
+         td.quantity,
+         td.price_each,
+         f.name as item_name,
+         f.category as item_category
        FROM Customer_Purchase_Transaction t
        JOIN Customer c ON t.customer_id = c.customer_id
-       ORDER BY t.transaction_date DESC`
+       LEFT JOIN Transaction_Details td ON t.transaction_id = td.transaction_id
+       LEFT JOIN Furniture f ON td.furniture_id = f.furniture_id
+       ORDER BY t.transaction_date DESC, td.detail_id`
     );
     
-    // Get details for each transaction
-    const transactionsWithDetails = await Promise.all(
-      transactions.map(async (transaction) => {
-        const [details] = await pool.execute(
-          `SELECT td.*, f.name, f.category 
-           FROM Transaction_Details td
-           JOIN Furniture f ON td.furniture_id = f.furniture_id
-           WHERE td.transaction_id = ?`,
-          [transaction.transaction_id]
-        );
-        return {
-          ...transaction,
-          items: details
-        };
-      })
-    );
+    // Group transactions and their details
+    const transactionsMap = new Map();
+    
+    transactions.forEach(row => {
+      const transactionId = row.transaction_id;
+      
+      if (!transactionsMap.has(transactionId)) {
+        transactionsMap.set(transactionId, {
+          transaction_id: row.transaction_id,
+          customer_id: row.customer_id,
+          transaction_date: row.transaction_date,
+          total_amount: row.total_amount,
+          payment_method: row.payment_method,
+          status: row.status,
+          customer_email: row.customer_email,
+          first_name: row.first_name,
+          last_name: row.last_name,
+          items: []
+        });
+      }
+      
+      // Add item details if they exist
+      if (row.detail_id) {
+        transactionsMap.get(transactionId).items.push({
+          detail_id: row.detail_id,
+          transaction_id: row.transaction_id,
+          furniture_id: row.furniture_id,
+          quantity: row.quantity,
+          price_each: row.price_each,
+          name: row.item_name,
+          category: row.item_category
+        });
+      }
+    });
+    
+    const transactionsWithDetails = Array.from(transactionsMap.values());
     
     res.json(transactionsWithDetails);
   } catch (error) {

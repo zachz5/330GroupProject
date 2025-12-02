@@ -15,9 +15,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
-      // Navigate to profile page after successful login
-      window.history.pushState({}, '', '/profile');
+      // Login updates the auth context
+      const userData = await login(email, password);
+      // Navigate to inventory page for employees, profile page for customers
+      if (userData.isEmployee) {
+        window.history.pushState({}, '', '/inventory');
+      } else {
+        window.history.pushState({}, '', '/profile');
+      }
       window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to log in');
@@ -100,6 +105,63 @@ export default function LoginPage() {
               Sign up
             </Link>
           </p>
+        </div>
+
+        {/* Demo Accounts Section */}
+        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 text-center">
+            Demo Accounts
+          </h2>
+          <div className="space-y-4">
+            <div className="bg-white rounded-lg p-4 border border-blue-100">
+              <h3 className="font-semibold text-gray-900 mb-2">Demo User Account</h3>
+              <div className="space-y-1 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-gray-700 w-20">Email:</span>
+                  <span className="text-gray-900 font-mono">demo@campusrehome.com</span>
+                  <button
+                    onClick={() => {
+                      setEmail('demo@campusrehome.com');
+                      setPassword('demo123');
+                    }}
+                    className="ml-auto text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700 transition-colors"
+                  >
+                    Fill
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-gray-700 w-20">Password:</span>
+                  <span className="text-gray-900 font-mono">demo123</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 border border-blue-100">
+              <h3 className="font-semibold text-gray-900 mb-2">Demo Admin Account</h3>
+              <div className="space-y-1 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-gray-700 w-20">Email:</span>
+                  <span className="text-gray-900 font-mono">admin@campusrehome.com</span>
+                  <button
+                    onClick={() => {
+                      setEmail('admin@campusrehome.com');
+                      setPassword('admin123');
+                    }}
+                    className="ml-auto text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700 transition-colors"
+                  >
+                    Fill
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-gray-700 w-20">Password:</span>
+                  <span className="text-gray-900 font-mono">admin123</span>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs text-gray-500">Role: Administrator (has employee privileges)</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

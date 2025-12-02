@@ -84,3 +84,4 @@ async function updateAllPhones() {
 
 updateAllPhones();
 
+
