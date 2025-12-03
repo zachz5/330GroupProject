@@ -6,9 +6,14 @@ import RegisterPage from '../pages/RegisterPage';
 import LoginPage from '../pages/LoginPage';
 import ProfilePage from '../pages/ProfilePage';
 import InventoryPage from '../pages/InventoryPage';
+import CartPage from '../pages/CartPage';
+import CheckoutPage from '../pages/CheckoutPage';
+import DashboardPage from '../pages/DashboardPage';
+import UsersPage from '../pages/UsersPage';
+import OrdersPage from '../pages/OrdersPage';
 import { useAuth } from '../contexts/AuthContext';
 
-function ProtectedInventoryRoute() {
+function ProtectedRoute({ children, requireEmployee = false, requireCustomer = false }: { children: JSX.Element; requireEmployee?: boolean; requireCustomer?: boolean }) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -31,13 +36,13 @@ function ProtectedInventoryRoute() {
     );
   }
 
-  if (!user.isEmployee) {
+  if (requireEmployee && !user.isEmployee) {
     return (
       <div className="min-h-screen bg-gray-50 py-8 px-4">
         <div className="max-w-4xl mx-auto">
           <div className="bg-white rounded-lg shadow-sm p-8 text-center">
             <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h1>
-            <p className="text-gray-600 mb-4">Only employees can access the inventory page.</p>
+            <p className="text-gray-600 mb-4">Only employees can access this page.</p>
             <a href="/" className="text-emerald-600 hover:text-emerald-700 font-medium">
               Return to Home
             </a>
@@ -47,7 +52,23 @@ function ProtectedInventoryRoute() {
     );
   }
 
-  return <InventoryPage />;
+  if (requireCustomer && user.isEmployee) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-lg shadow-sm p-8 text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h1>
+            <p className="text-gray-600 mb-4">Employees cannot access customer pages.</p>
+            <a href="/inventory" className="text-emerald-600 hover:text-emerald-700 font-medium">
+              Go to Inventory
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return children;
 }
 
 export default function Router() {
@@ -69,7 +90,12 @@ export default function Router() {
     '/register': <RegisterPage />,
     '/login': <LoginPage />,
     '/profile': <ProfilePage />,
-    '/inventory': <ProtectedInventoryRoute />,
+    '/inventory': <ProtectedRoute requireEmployee={true}><InventoryPage /></ProtectedRoute>,
+    '/dashboard': <ProtectedRoute requireEmployee={true}><DashboardPage /></ProtectedRoute>,
+    '/users': <ProtectedRoute requireEmployee={true}><UsersPage /></ProtectedRoute>,
+    '/orders': <ProtectedRoute requireEmployee={true}><OrdersPage /></ProtectedRoute>,
+    '/cart': <CartPage />,
+    '/checkout': <ProtectedRoute requireCustomer={true}><CheckoutPage /></ProtectedRoute>,
   };
 
   return routes[currentPath] || routes['/'];

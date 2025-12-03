@@ -28,3 +28,8 @@ async function checkPhones() {
 
 checkPhones();
 
+
+
+
+
+

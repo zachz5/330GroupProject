@@ -1,9 +1,12 @@
-import { Home, User, LayoutGrid, LogOut } from 'lucide-react';
+import { Home, User, LogOut, ShoppingCart } from 'lucide-react';
 import { Link } from './Link';
 import { useAuth } from '../contexts/AuthContext';
+import { useCart } from '../contexts/CartContext';
 
 export default function Header() {
   const { user, logout } = useAuth();
+  const { getTotalItems } = useCart();
+  const cartItemCount = getTotalItems();
 
   const handleLogout = () => {
     logout();
@@ -24,17 +27,40 @@ export default function Header() {
             <Link to="/" className="text-gray-700 hover:text-emerald-600 font-medium transition-colors">
               Home
             </Link>
-            <Link to="/browse" className="text-gray-700 hover:text-emerald-600 font-medium transition-colors">
-              Browse
-            </Link>
-            {user?.isEmployee && (
-              <Link to="/inventory" className="text-gray-700 hover:text-emerald-600 font-medium transition-colors">
-                Inventory
+            {!user?.isEmployee && (
+              <Link to="/browse" className="text-gray-700 hover:text-emerald-600 font-medium transition-colors">
+                Browse
               </Link>
             )}
-            {user && (
+            {user?.isEmployee && (
+              <>
+                <Link to="/inventory" className="text-gray-700 hover:text-emerald-600 font-medium transition-colors">
+                  Inventory
+                </Link>
+                <Link to="/dashboard" className="text-gray-700 hover:text-emerald-600 font-medium transition-colors">
+                  Dashboard
+                </Link>
+                <Link to="/users" className="text-gray-700 hover:text-emerald-600 font-medium transition-colors">
+                  Users
+                </Link>
+                <Link to="/orders" className="text-gray-700 hover:text-emerald-600 font-medium transition-colors">
+                  Orders
+                </Link>
+              </>
+            )}
+            {user && !user.isEmployee && (
               <Link to="/profile" className="text-gray-700 hover:text-emerald-600 font-medium transition-colors">
                 Profile
+              </Link>
+            )}
+            {!user?.isEmployee && (
+              <Link to="/cart" className="relative text-gray-700 hover:text-emerald-600 font-medium transition-colors">
+                <ShoppingCart size={20} />
+                {cartItemCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-emerald-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {cartItemCount > 99 ? '99+' : cartItemCount}
+                  </span>
+                )}
               </Link>
             )}
           </nav>
@@ -76,9 +102,19 @@ export default function Header() {
             )}
           </div>
 
-          <button className="md:hidden p-2 text-gray-700 hover:text-emerald-600">
-            <LayoutGrid size={24} />
-          </button>
+          {!user?.isEmployee && (
+            <Link
+              to="/cart"
+              className="md:hidden relative p-2 text-gray-700 hover:text-emerald-600"
+            >
+              <ShoppingCart size={24} />
+              {cartItemCount > 0 && (
+                <span className="absolute top-0 right-0 bg-emerald-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {cartItemCount > 99 ? '99+' : cartItemCount}
+                </span>
+              )}
+            </Link>
+          )}
         </div>
       </div>
     </header>

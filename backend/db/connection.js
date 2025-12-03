@@ -48,10 +48,11 @@ function getDbConfig() {
 const dbConfig = getDbConfig();
 
 // Create connection pool
+// Reduced limit to 2 to stay well under database max_user_connections limit of 10
 export const pool = mysql.createPool({
   ...dbConfig,
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 2,
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,

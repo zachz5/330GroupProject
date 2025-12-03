@@ -47,3 +47,8 @@ async function checkTransactionCustomers() {
 
 checkTransactionCustomers();
 
+
+
+
+
+

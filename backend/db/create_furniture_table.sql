@@ -13,3 +13,8 @@ CREATE TABLE IF NOT EXISTS furniture (
     FOREIGN KEY (added_by_employee_id) REFERENCES employee(employee_id) ON DELETE SET NULL
 );
 
+
+
+
+
+

@@ -5,7 +5,7 @@ import { formatPhone } from '../utils/phoneFormatter.js';
 
 const router = express.Router();
 
-// POST register
+// POST register customer
 router.post('/register', async (req, res, next) => {
   try {
     const { email, password, first_name, last_name, phone, address } = req.body;
@@ -54,8 +54,80 @@ router.post('/register', async (req, res, next) => {
   }
 });
 
+// POST register employee
+router.post('/register-employee', async (req, res, next) => {
+  try {
+    const { email, password, first_name, last_name, phone, employee_code } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    
+    if (!employee_code) {
+      return res.status(400).json({ error: 'Employee code is required' });
+    }
+    
+    // Validate employee code
+    if (employee_code !== 'password') {
+      return res.status(403).json({ error: 'Invalid employee code' });
+    }
+    
+    // Check if employee exists
+    const [existingEmployees] = await pool.execute(
+      'SELECT employee_id FROM Employee WHERE email = ?',
+      [email]
+    );
+    
+    if (existingEmployees.length > 0) {
+      return res.status(400).json({ error: 'Employee with this email already exists' });
+    }
+    
+    // Hash password
+    const password_hash = await bcrypt.hash(password, 10);
+    
+    // Format phone number
+    const formattedPhone = phone ? formatPhone(phone) : null;
+    
+    // Create employee with default role of 'Admin' and today's date as hire_date
+    const [result] = await pool.execute(
+      'INSERT INTO Employee (first_name, last_name, email, phone, role, hire_date, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        first_name || null,
+        last_name || null,
+        email,
+        formattedPhone,
+        'Admin',
+        new Date().toISOString().split('T')[0],
+        password_hash
+      ]
+    );
+    
+    const [newEmployee] = await pool.execute(
+      'SELECT employee_id, email, first_name, last_name, phone, role FROM Employee WHERE employee_id = ?',
+      [result.insertId]
+    );
+    
+    // Return employee in the same format as login
+    const response = {
+      employee_id: newEmployee[0].employee_id,
+      email: newEmployee[0].email,
+      first_name: newEmployee[0].first_name,
+      last_name: newEmployee[0].last_name,
+      phone: newEmployee[0].phone || null,
+      address: null,
+      isEmployee: true,
+      role: newEmployee[0].role,
+    };
+    
+    res.status(201).json(response);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // POST login
 router.post('/login', async (req, res, next) => {
+  let connection = null;
   try {
     const { email, password } = req.body;
     
@@ -137,7 +209,15 @@ router.post('/login', async (req, res, next) => {
       isEmployee: employeeCheck.length > 0,
     });
   } catch (error) {
-    next(error);
+    console.error('Login error:', error);
+    console.error('Login error stack:', error.stack);
+    // Make sure we always send a response
+    if (!res.headersSent) {
+      next(error);
+    } else {
+      // If headers were sent, log the error but don't try to send another response
+      console.error('Response already sent, cannot send error response');
+    }
   }
 });
 

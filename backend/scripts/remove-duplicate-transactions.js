@@ -1,103 +1,112 @@
 import { pool } from '../db/connection.js';
 
-async function removeDuplicates() {
+async function removeDuplicateTransactions() {
   try {
-    console.log('Removing duplicate transactions...\n');
+    console.log('🔍 Finding duplicate transactions...\n');
     
-    // Get demo customer ID
-    const [demoCustomer] = await pool.execute(
-      'SELECT customer_id, email FROM Customer WHERE email = ?',
-      ['demo@campusrehome.com']
-    );
+    // Find transactions with the same customer_id, total_amount, and items
+    const [duplicates] = await pool.execute(`
+      SELECT 
+        t1.transaction_id as id1,
+        t2.transaction_id as id2,
+        t1.customer_id,
+        t1.total_amount,
+        t1.transaction_date as date1,
+        t2.transaction_date as date2,
+        COUNT(DISTINCT td1.detail_id) as item_count
+      FROM Customer_Purchase_Transaction t1
+      JOIN Customer_Purchase_Transaction t2 
+        ON t1.customer_id = t2.customer_id
+        AND t1.transaction_id < t2.transaction_id
+        AND ABS(t1.total_amount - t2.total_amount) < 0.01
+      LEFT JOIN Transaction_Details td1 ON t1.transaction_id = td1.transaction_id
+      LEFT JOIN Transaction_Details td2 ON t2.transaction_id = td2.transaction_id
+      GROUP BY t1.transaction_id, t2.transaction_id, t1.customer_id, t1.total_amount, t1.transaction_date, t2.transaction_date
+      HAVING COUNT(DISTINCT td1.detail_id) = COUNT(DISTINCT td2.detail_id)
+    `);
     
-    if (demoCustomer.length === 0) {
-      console.log('❌ Demo customer not found');
+    if (duplicates.length === 0) {
+      console.log('✅ No duplicate transactions found!\n');
       return;
     }
     
-    const customerId = demoCustomer[0].customer_id;
-    console.log(`Demo customer ID: ${customerId} (${demoCustomer[0].email})\n`);
+    console.log(`Found ${duplicates.length} potential duplicate pairs\n`);
     
-    // Get all transactions for demo customer
-    const [transactions] = await pool.execute(
-      `SELECT t.*, 
-              (SELECT SUM(td.quantity) FROM Transaction_Details td WHERE td.transaction_id = t.transaction_id) as total_items
-       FROM Customer_Purchase_Transaction t
-       WHERE t.customer_id = ?
-       ORDER BY t.transaction_date DESC`,
-      [customerId]
+    // For each duplicate pair, check if items match exactly
+    const toDelete = [];
+    
+    for (const dup of duplicates) {
+      const [items1] = await pool.execute(
+        'SELECT furniture_id, quantity, price_each FROM Transaction_Details WHERE transaction_id = ? ORDER BY furniture_id, quantity',
+        [dup.id1]
+      );
+      
+      const [items2] = await pool.execute(
+        'SELECT furniture_id, quantity, price_each FROM Transaction_Details WHERE transaction_id = ? ORDER BY furniture_id, quantity',
+        [dup.id2]
     );
     
-    // Group by total_amount and total_items to find duplicates
-    const groups = new Map();
-    transactions.forEach(t => {
-      const key = `${t.total_amount}_${t.total_items}`;
-      if (!groups.has(key)) {
-        groups.set(key, []);
-      }
-      groups.get(key).push(t);
-    });
-    
-    // Find duplicates and keep only the first (most recent) one
-    let removedCount = 0;
-    const transactionsToRemove = [];
-    
-    groups.forEach((group, key) => {
-      if (group.length > 1) {
-        // Sort by transaction_id descending (most recent first)
-        group.sort((a, b) => b.transaction_id - a.transaction_id);
-        
-        // Keep the first one, remove the rest
-        console.log(`\nFound ${group.length} duplicates for $${group[0].total_amount} / ${group[0].total_items} items:`);
-        console.log(`  Keeping transaction ${group[0].transaction_id} (most recent)`);
-        
-        for (let i = 1; i < group.length; i++) {
-          console.log(`  Removing transaction ${group[i].transaction_id}`);
-          transactionsToRemove.push(group[i].transaction_id);
+      if (items1.length !== items2.length) continue;
+      
+      const itemsMatch = items1.every((item1, index) => {
+        const item2 = items2[index];
+        return item1.furniture_id === item2.furniture_id &&
+               item1.quantity === item2.quantity &&
+               Math.abs(item1.price_each - item2.price_each) < 0.01;
+      });
+      
+      if (itemsMatch) {
+        // Keep the older transaction, delete the newer one
+        const keepId = new Date(dup.date1) < new Date(dup.date2) ? dup.id1 : dup.id2;
+        const deleteId = keepId === dup.id1 ? dup.id2 : dup.id1;
+        toDelete.push(deleteId);
+        console.log(`  🗑️  Will delete transaction ${deleteId} (duplicate of ${keepId})`);
         }
       }
-    });
     
-    if (transactionsToRemove.length === 0) {
-      console.log('\n✅ No duplicate transactions to remove');
+    if (toDelete.length === 0) {
+      console.log('\n✅ No exact duplicates found (items don\'t match exactly)\n');
       return;
     }
     
-    console.log(`\n\nRemoving ${transactionsToRemove.length} duplicate transactions...`);
+    // Remove duplicate IDs from the list
+    const uniqueToDelete = [...new Set(toDelete)];
     
-    // Remove transaction details first (foreign key constraint)
-    for (const transactionId of transactionsToRemove) {
-      await pool.execute(
-        'DELETE FROM Transaction_Details WHERE transaction_id = ?',
-        [transactionId]
-      );
+    console.log(`\n⚠️  Found ${uniqueToDelete.length} unique duplicate transactions to delete`);
+    console.log('   Transaction IDs:', uniqueToDelete.join(', '));
+    console.log('\n🗑️  Deleting duplicate transactions...\n');
+    
+    // Delete the duplicates
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      let deletedCount = 0;
+      for (const id of uniqueToDelete) {
+        // Delete transaction details first
+        await connection.execute('DELETE FROM Transaction_Details WHERE transaction_id = ?', [id]);
+        // Then delete the transaction
+        await connection.execute('DELETE FROM Customer_Purchase_Transaction WHERE transaction_id = ?', [id]);
+        deletedCount++;
+        if (deletedCount % 10 === 0) {
+          console.log(`   Deleted ${deletedCount}/${uniqueToDelete.length} transactions...`);
+        }
+      }
+      
+      await connection.commit();
+      console.log(`\n✅ Successfully deleted ${deletedCount} duplicate transactions\n`);
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
     }
     
-    // Then remove the transactions
-    for (const transactionId of transactionsToRemove) {
-      await pool.execute(
-        'DELETE FROM Customer_Purchase_Transaction WHERE transaction_id = ?',
-        [transactionId]
-      );
-      removedCount++;
-    }
-    
-    console.log(`✅ Removed ${removedCount} duplicate transactions`);
-    
-    // Verify
-    const [remaining] = await pool.execute(
-      `SELECT COUNT(*) as count FROM Customer_Purchase_Transaction WHERE customer_id = ?`,
-      [customerId]
-    );
-    
-    console.log(`\nRemaining transactions for demo customer: ${remaining[0].count}`);
-    
-  } catch (err) {
-    console.error('Error:', err.message);
+  } catch (error) {
+    console.error('❌ Error removing duplicates:', error);
   } finally {
     await pool.end();
   }
 }
 
-removeDuplicates();
-
+removeDuplicateTransactions();

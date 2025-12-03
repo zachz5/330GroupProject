@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, login as loginAPI, register as registerAPI, updateProfile as updateProfileAPI } from '../lib/api';
+import { User, login as loginAPI, register as registerAPI, registerEmployee as registerEmployeeAPI, updateProfile as updateProfileAPI } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, first_name?: string, last_name?: string, phone?: string, address?: string) => Promise<void>;
+  registerEmployee: (email: string, password: string, first_name?: string, last_name?: string, phone?: string, employee_code?: string) => Promise<void>;
   updateProfile: (updates: Partial<Omit<User, 'customer_id' | 'email' | 'date_registered'>>) => Promise<void>;
   logout: () => void;
 }
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userData = await loginAPI(email, password);
     setUser(userData);
     localStorage.setItem('user', JSON.stringify(userData));
+    return userData;
   };
 
   const register = async (
@@ -48,9 +50,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('user', JSON.stringify(userData));
   };
 
+  const registerEmployee = async (
+    email: string,
+    password: string,
+    first_name?: string,
+    last_name?: string,
+    phone?: string,
+    employee_code?: string
+  ) => {
+    const userData = await registerEmployeeAPI(email, password, first_name, last_name, phone, employee_code);
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
   const updateProfile = async (updates: Partial<Omit<User, 'customer_id' | 'email' | 'date_registered'>>) => {
     if (!user) throw new Error('No user logged in');
-    const updatedUser = await updateProfileAPI(user.customer_id, updates);
+    if (!user.customer_id) throw new Error('Invalid user: missing customer_id');
+    // Include email in the update request for verification
+    const updatedUser = await updateProfileAPI(user.customer_id, { ...updates, email: user.email });
     setUser(updatedUser);
     localStorage.setItem('user', JSON.stringify(updatedUser));
   };
@@ -61,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, updateProfile, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, registerEmployee, updateProfile, logout }}>
       {children}
     </AuthContext.Provider>
   );
