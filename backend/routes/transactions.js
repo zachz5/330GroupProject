@@ -306,8 +306,8 @@ router.put('/:id', async (req, res, next) => {
       const [currentDetails] = await connection.execute(
         'SELECT detail_id, furniture_id, quantity FROM Transaction_Details WHERE transaction_id = ?',
         [id]
-      );
-      
+    );
+    
       // Get current transaction to check status
       const [currentTransaction] = await connection.execute(
         'SELECT status FROM Customer_Purchase_Transaction WHERE transaction_id = ?',
@@ -370,11 +370,11 @@ router.put('/:id', async (req, res, next) => {
         if ((status === 'Cancelled' || status === 'Refunded') && currentStatus !== 'Cancelled' && currentStatus !== 'Refunded') {
           for (const detail of currentDetails) {
             await connection.execute(
-              'UPDATE Furniture SET quantity = quantity + ? WHERE furniture_id = ?',
-              [detail.quantity, detail.furniture_id]
-            );
-          }
-        }
+          'UPDATE Furniture SET quantity = quantity + ? WHERE furniture_id = ?',
+          [detail.quantity, detail.furniture_id]
+        );
+      }
+    }
         // If status changed from cancelled/refunded to something else, unstock items
         else if ((currentStatus === 'Cancelled' || currentStatus === 'Refunded') && status !== 'Cancelled' && status !== 'Refunded') {
           for (const detail of currentDetails) {
@@ -497,17 +497,17 @@ router.put('/:id', async (req, res, next) => {
       
       // Get updated transaction with details - use a fresh connection to avoid any caching
       const [updatedTransaction] = await connection.execute(
-        `SELECT t.*, c.email as customer_email, c.first_name, c.last_name
-         FROM Customer_Purchase_Transaction t
-         JOIN Customer c ON t.customer_id = c.customer_id
-         WHERE t.transaction_id = ?`,
-        [id]
-      );
-      
-      if (updatedTransaction.length === 0) {
+      `SELECT t.*, c.email as customer_email, c.first_name, c.last_name
+       FROM Customer_Purchase_Transaction t
+       JOIN Customer c ON t.customer_id = c.customer_id
+       WHERE t.transaction_id = ?`,
+      [id]
+    );
+    
+    if (updatedTransaction.length === 0) {
         connection.release();
-        return res.status(404).json({ error: 'Transaction not found' });
-      }
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
       
       console.log('🔍 After commit - shipping_address from DB query:', updatedTransaction[0]?.shipping_address);
       console.log('🔍 Raw shipping_address value:', JSON.stringify(updatedTransaction[0]?.shipping_address));
@@ -519,20 +519,20 @@ router.put('/:id', async (req, res, next) => {
         [id]
       );
       console.log('🔍 Direct check - shipping_address:', directCheck[0]?.shipping_address);
-      
-      // Get transaction details (items) to match the structure of GET endpoint
+    
+    // Get transaction details (items) to match the structure of GET endpoint
       const [details] = await connection.execute(
-        `SELECT td.*, f.name, f.category 
-         FROM Transaction_Details td
-         JOIN Furniture f ON td.furniture_id = f.furniture_id
-         WHERE td.transaction_id = ?`,
-        [id]
-      );
-      
+      `SELECT td.*, f.name, f.category 
+       FROM Transaction_Details td
+       JOIN Furniture f ON td.furniture_id = f.furniture_id
+       WHERE td.transaction_id = ?`,
+      [id]
+    );
+    
       connection.release();
       
       // Explicitly construct response to ensure shipping_address is included
-      const response = {
+    const response = {
         transaction_id: updatedTransaction[0].transaction_id,
         customer_id: updatedTransaction[0].customer_id,
         transaction_date: updatedTransaction[0].transaction_date,
@@ -547,8 +547,8 @@ router.put('/:id', async (req, res, next) => {
         customer_email: updatedTransaction[0].customer_email,
         first_name: updatedTransaction[0].first_name,
         last_name: updatedTransaction[0].last_name,
-        items: details
-      };
+      items: details
+    };
       
       console.log('📤 Response shipping_address:', response.shipping_address);
       console.log('📤 Full response object keys:', Object.keys(response));
@@ -560,8 +560,8 @@ router.put('/:id', async (req, res, next) => {
         shipping_address_in_db: updatedTransaction[0]?.shipping_address,
         shipping_address_in_response: response.shipping_address
       };
-      
-      res.json(response);
+    
+    res.json(response);
     } catch (error) {
       await connection.rollback();
       connection.release();

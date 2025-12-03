@@ -4,3 +4,6 @@
 ALTER TABLE Furniture DROP COLUMN IF EXISTS image_url;
 
 
+
+
+

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, X, Save, Search } from 'lucide-react';
-import { getItems, updateItem, createItem, Item } from '../lib/api';
+import { Plus, Edit, X, Save, Search, Trash2, RotateCcw } from 'lucide-react';
+import { getItems, updateItem, createItem, toggleItemSaleStatus, Item } from '../lib/api';
 import { getFurnitureEmoji } from '../lib/emojis';
 import { useAuth } from '../contexts/AuthContext';
+import ConfirmModal from '../components/ConfirmModal';
 
 export default function InventoryPage() {
   const { user } = useAuth();
@@ -24,6 +25,11 @@ export default function InventoryPage() {
     quantity: undefined,
   });
   const [selectedEmoji, setSelectedEmoji] = useState<string>('🪑');
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; itemId: number | null; itemName?: string; isForSale: boolean }>({
+    isOpen: false,
+    itemId: null,
+    isForSale: true,
+  });
 
   useEffect(() => {
     loadItems();
@@ -32,7 +38,8 @@ export default function InventoryPage() {
   const loadItems = async () => {
     try {
       setLoading(true);
-      const data = await getItems();
+      // Include inactive items (not for sale) so employees can see and restore them
+      const data = await getItems(true);
       setItems(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load items');
@@ -117,6 +124,36 @@ export default function InventoryPage() {
   const handleCancel = () => {
     setEditingId(null);
     setEditForm({});
+  };
+
+  const handleToggleSaleStatusClick = (id: number) => {
+    const item = items.find(i => i.furniture_id === id);
+    // Check if item is currently for sale (handle both boolean false and 0 from database)
+    const currentlyForSale = item?.is_for_sale !== false && item?.is_for_sale !== 0 && item?.is_for_sale !== undefined;
+    setDeleteConfirm({
+      isOpen: true,
+      itemId: id,
+      itemName: item?.name,
+      isForSale: !currentlyForSale, // Toggle: if currently for sale, we're marking as not for sale
+    });
+  };
+
+  const handleToggleSaleStatus = async () => {
+    if (!deleteConfirm.itemId) return;
+
+    try {
+      const updated = await toggleItemSaleStatus(deleteConfirm.itemId, deleteConfirm.isForSale);
+      setItems(items.map(item => 
+        item.furniture_id === deleteConfirm.itemId 
+          ? { ...item, is_for_sale: updated.is_for_sale }
+          : item
+      ));
+      setDeleteConfirm({ isOpen: false, itemId: null, isForSale: true });
+      setError(''); // Clear any previous errors
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update item sale status');
+      setDeleteConfirm({ isOpen: false, itemId: null, isForSale: true });
+    }
   };
 
   const handleAddItem = async () => {
@@ -278,6 +315,7 @@ export default function InventoryPage() {
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Condition</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Price</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Status</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-900">Sale Status</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Notes</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Actions</th>
                   </tr>
@@ -285,8 +323,9 @@ export default function InventoryPage() {
                 <tbody className="divide-y divide-gray-200">
                   {filteredItems.map((item) => {
                     const isEditing = editingId === item.furniture_id;
+                    const isNotForSale = item.is_for_sale === false;
                     return (
-                    <tr key={item.furniture_id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={item.furniture_id} className={`hover:bg-gray-50 transition-colors ${isNotForSale ? 'bg-gray-50 opacity-75' : ''}`}>
                       <td className="py-4 px-6">
                         {isEditing ? (
                           <div className="flex items-center gap-3">
@@ -389,6 +428,17 @@ export default function InventoryPage() {
                           {getStatus(item.quantity)}
                         </span>
                       </td>
+                      <td className="py-4 px-6">
+                        {item.is_for_sale === false || item.is_for_sale === 0 ? (
+                          <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800 font-semibold">
+                            ⚠️ Not for Sale
+                          </span>
+                        ) : (
+                          <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                            ✓ For Sale
+                          </span>
+                        )}
+                      </td>
                       <td className="py-4 px-6 max-w-xs">
                         {isEditing ? (
                           <textarea
@@ -435,6 +485,23 @@ export default function InventoryPage() {
                             >
                               <Edit size={18} />
                             </button>
+                            {(item.is_for_sale === false || item.is_for_sale === 0) ? (
+                              <button
+                                onClick={() => handleToggleSaleStatusClick(item.furniture_id)}
+                                className="p-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                                title="Restore for Sale"
+                              >
+                                <RotateCcw size={18} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleToggleSaleStatusClick(item.furniture_id)}
+                                className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Mark as Not for Sale"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -614,6 +681,20 @@ export default function InventoryPage() {
           </div>
         </div>
       )}
+
+      {/* Toggle Sale Status Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteConfirm.isOpen}
+        title={deleteConfirm.isForSale ? "Restore Item for Sale" : "Mark Item as Not for Sale"}
+        message={deleteConfirm.isForSale 
+          ? `Are you sure you want to restore "${deleteConfirm.itemName || 'this item'}" for sale? Customers will be able to purchase it again.`
+          : `Are you sure you want to mark "${deleteConfirm.itemName || 'this item'}" as not for sale? This will hide it from customers, but the item will remain in the database.`}
+        confirmText={deleteConfirm.isForSale ? "Restore" : "Mark as Not for Sale"}
+        cancelText="Cancel"
+        onConfirm={handleToggleSaleStatus}
+        onCancel={() => setDeleteConfirm({ isOpen: false, itemId: null, isForSale: true })}
+        variant={deleteConfirm.isForSale ? "info" : "danger"}
+      />
     </div>
   );
 }

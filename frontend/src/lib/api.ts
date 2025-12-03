@@ -42,6 +42,7 @@ export interface Item {
   notes?: string | null;
   date_added?: string;
   added_by_employee_id?: number;
+  is_for_sale?: boolean;
 }
 
 export interface User {
@@ -111,8 +112,16 @@ export async function updateProfile(
 }
 
 // Items API
-export async function getItems(): Promise<Item[]> {
-  return request<Item[]>('/items');
+export async function getItems(includeInactive: boolean = false): Promise<Item[]> {
+  const url = includeInactive ? '/items?includeInactive=true' : '/items';
+  return request<Item[]>(url);
+}
+
+export async function toggleItemSaleStatus(id: number, isForSale: boolean): Promise<Item> {
+  return request<Item>(`/items/${id}/toggle-sale-status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_for_sale: isForSale }),
+  });
 }
 
 export async function getItem(id: number): Promise<Item> {

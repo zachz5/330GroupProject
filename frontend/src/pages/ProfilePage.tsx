@@ -35,24 +35,24 @@ export default function ProfilePage() {
       return;
     }
     
-    setFormData({
-      first_name: user.first_name || '',
-      last_name: user.last_name || '',
-      phone: user.phone || '',
-      address: user.address || '',
-    });
-    
-    // Get localStorage orders
-    const localStorageOrders = getOrdersByCustomer(user.email);
-    
-    // Fetch orders from database and migrate localStorage orders
-    if (user.customer_id) {
-      setLoadingOrders(true);
+      setFormData({
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+        phone: user.phone || '',
+        address: user.address || '',
+      });
       
-      // First, fetch database orders
-      getCustomerTransactions(user.customer_id)
-        .then(transactions => {
-          console.log(`Fetched ${transactions.length} transactions from database`);
+      // Get localStorage orders
+      const localStorageOrders = getOrdersByCustomer(user.email);
+      
+      // Fetch orders from database and migrate localStorage orders
+      if (user.customer_id) {
+        setLoadingOrders(true);
+        
+        // First, fetch database orders
+        getCustomerTransactions(user.customer_id)
+          .then(transactions => {
+            console.log(`Fetched ${transactions.length} transactions from database`);
           console.log('Transaction details:', transactions.map(t => ({
             id: t.transaction_id,
             total: t.total_amount,
@@ -71,14 +71,14 @@ export default function ProfilePage() {
           }
           
           setDatabaseOrders(uniqueTransactions);
-          
-          // Filter out localStorage orders that have already been migrated
+            
+            // Filter out localStorage orders that have already been migrated
           // Match by total amount and item count - use pipe separator to avoid issues
-          const unmigratedOrders = localStorageOrders.filter(localOrder => {
-            const localItemCount = localOrder.items.reduce((sum, item) => sum + item.quantity, 0);
+            const unmigratedOrders = localStorageOrders.filter(localOrder => {
+              const localItemCount = localOrder.items.reduce((sum, item) => sum + item.quantity, 0);
             const localItemIds = localOrder.items.map(item => `${item.item.furniture_id}:${item.quantity}`).sort().join('|');
             const localTotal = parseFloat(localOrder.total.toString());
-            
+              
             const isMigrated = uniqueTransactions.some(dbTransaction => {
               if (!dbTransaction.items || dbTransaction.items.length === 0) return false;
               
@@ -102,12 +102,12 @@ export default function ProfilePage() {
             if (isMigrated) {
               console.log(`⏭️  Skipping localStorage order ${localOrder.orderId}: Already migrated to database`);
             }
+              
+              return !isMigrated;
+            });
             
-            return !isMigrated;
-          });
-          
-          setPreviousOrders(unmigratedOrders);
-          
+            setPreviousOrders(unmigratedOrders);
+            
           // DISABLED: Automatic migration is creating duplicates
           // If you need to migrate localStorage orders, do it manually or fix the duplicate detection first
           // if (unmigratedOrders.length > 0 && !isMigrating) {
@@ -116,54 +116,54 @@ export default function ProfilePage() {
           //   return migrateLocalStorageOrders()
           //     .finally(() => setIsMigrating(false));
           // }
-          
-          return { success: 0, failed: 0, skipped: 0 };
-        })
-        .then(result => {
-          if (result && result.success > 0) {
-            console.log(`Migration complete: ${result.success} succeeded, ${result.failed} failed, ${result.skipped} skipped`);
-            // Refresh database orders after migration
-            return getCustomerTransactions(user.customer_id);
-          }
-          return null;
-        })
-        .then(transactions => {
-          if (transactions) {
+            
+            return { success: 0, failed: 0, skipped: 0 };
+          })
+          .then(result => {
+            if (result && result.success > 0) {
+              console.log(`Migration complete: ${result.success} succeeded, ${result.failed} failed, ${result.skipped} skipped`);
+              // Refresh database orders after migration
+              return getCustomerTransactions(user.customer_id);
+            }
+            return null;
+          })
+          .then(transactions => {
+            if (transactions) {
             // Remove duplicate transactions by transaction_id
             const uniqueTransactions = transactions.filter((t, index, self) => 
               index === self.findIndex(tr => tr.transaction_id === t.transaction_id)
             );
             setDatabaseOrders(uniqueTransactions);
             
-            // Re-filter localStorage orders after migration
-            const localStorageOrders = getOrdersByCustomer(user.email);
-            const unmigratedOrders = localStorageOrders.filter(localOrder => {
-              const localItemCount = localOrder.items.reduce((sum, item) => sum + item.quantity, 0);
+              // Re-filter localStorage orders after migration
+              const localStorageOrders = getOrdersByCustomer(user.email);
+              const unmigratedOrders = localStorageOrders.filter(localOrder => {
+                const localItemCount = localOrder.items.reduce((sum, item) => sum + item.quantity, 0);
               const localItemIds = localOrder.items.map(item => `${item.item.furniture_id}:${item.quantity}`).sort().join('|');
-              
-              const isMigrated = uniqueTransactions.some((dbTransaction: Transaction) => {
-                const dbItemCount = dbTransaction.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0;
-                const dbItemIds = dbTransaction.items?.map((item: any) => `${item.furniture_id}:${item.quantity}`).sort().join('|') || '';
                 
+              const isMigrated = uniqueTransactions.some((dbTransaction: Transaction) => {
+                  const dbItemCount = dbTransaction.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0;
+                const dbItemIds = dbTransaction.items?.map((item: any) => `${item.furniture_id}:${item.quantity}`).sort().join('|') || '';
+                  
                 return Math.abs(parseFloat(dbTransaction.total_amount.toString()) - parseFloat(localOrder.total.toString())) < 0.01 &&
-                       dbItemCount === localItemCount &&
-                       dbItemIds === localItemIds;
+                         dbItemCount === localItemCount &&
+                         dbItemIds === localItemIds;
+                });
+                
+                return !isMigrated;
               });
-              
-              return !isMigrated;
-            });
-            setPreviousOrders(unmigratedOrders);
-          }
-          setLoadingOrders(false);
-        })
-        .catch(err => {
-          console.error('❌ Failed to fetch/migrate orders:', err);
-          setLoadingOrders(false);
-        });
-    } else {
-      // No customer_id, just show localStorage orders
-      setPreviousOrders(localStorageOrders);
-    }
+              setPreviousOrders(unmigratedOrders);
+            }
+            setLoadingOrders(false);
+          })
+          .catch(err => {
+            console.error('❌ Failed to fetch/migrate orders:', err);
+            setLoadingOrders(false);
+          });
+      } else {
+        // No customer_id, just show localStorage orders
+        setPreviousOrders(localStorageOrders);
+      }
   };
 
   useEffect(() => {

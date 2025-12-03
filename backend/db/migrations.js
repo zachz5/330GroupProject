@@ -348,6 +348,36 @@ export async function runMigrations() {
       console.error('⚠️  Could not backfill shipping addresses for existing transactions:', error.message);
       console.error('   This is not critical - the server will continue running\n');
     }
+
+    // Check if is_for_sale column exists in Furniture table
+    const [isForSaleColumns] = await connection.execute(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() 
+      AND TABLE_NAME = 'Furniture' 
+      AND COLUMN_NAME = 'is_for_sale'
+    `);
+
+    if (isForSaleColumns.length === 0) {
+      console.log('Adding is_for_sale column to Furniture table...');
+      try {
+        await connection.execute(`
+          ALTER TABLE Furniture 
+          ADD COLUMN is_for_sale BOOLEAN DEFAULT TRUE NOT NULL
+        `);
+        console.log('✅ is_for_sale column added successfully!\n');
+      } catch (error) {
+        // If it fails, log but don't crash the server
+        if (error.code === 'ER_DUP_FIELD_NAME') {
+          console.log('✅ is_for_sale column already exists\n');
+        } else {
+          console.error('⚠️  Could not add is_for_sale column:', error.message);
+          console.error('   You can add it manually with: ALTER TABLE Furniture ADD COLUMN is_for_sale BOOLEAN DEFAULT TRUE NOT NULL;\n');
+        }
+      }
+    } else {
+      console.log('✅ is_for_sale column already exists\n');
+    }
   } catch (error) {
     // Don't crash the server if migrations fail
     console.error('⚠️  Migration check failed:', error.message);

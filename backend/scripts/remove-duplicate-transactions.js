@@ -44,8 +44,8 @@ async function removeDuplicateTransactions() {
       const [items2] = await pool.execute(
         'SELECT furniture_id, quantity, price_each FROM Transaction_Details WHERE transaction_id = ? ORDER BY furniture_id, quantity',
         [dup.id2]
-      );
-      
+    );
+    
       if (items1.length !== items2.length) continue;
       
       const itemsMatch = items1.every((item1, index) => {
@@ -61,8 +61,8 @@ async function removeDuplicateTransactions() {
         const deleteId = keepId === dup.id1 ? dup.id2 : dup.id1;
         toDelete.push(deleteId);
         console.log(`  🗑️  Will delete transaction ${deleteId} (duplicate of ${keepId})`);
+        }
       }
-    }
     
     if (toDelete.length === 0) {
       console.log('\n✅ No exact duplicates found (items don\'t match exactly)\n');

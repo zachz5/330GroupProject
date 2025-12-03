@@ -6,7 +6,15 @@ const router = express.Router();
 // GET all furniture items
 router.get('/', async (req, res, next) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM Furniture ORDER BY furniture_id DESC');
+    // Check if includeInactive query parameter is set (for employees to see all items)
+    const includeInactive = req.query.includeInactive === 'true';
+    
+    // Filter by is_for_sale unless includeInactive is true
+    const query = includeInactive 
+      ? 'SELECT * FROM Furniture ORDER BY furniture_id DESC'
+      : 'SELECT * FROM Furniture WHERE is_for_sale = TRUE ORDER BY furniture_id DESC';
+    
+    const [rows] = await pool.execute(query);
     
     // Get notes from Inventory_Log for all items
     const furnitureIds = rows.map(row => row.furniture_id);
@@ -27,17 +35,26 @@ router.get('/', async (req, res, next) => {
       }
     }
     
-    // Remove image_url if it exists and ensure emoji field exists, add notes
+    // Remove image_url if it exists and ensure emoji field exists, add notes, ensure is_for_sale is boolean
     const rowsWithEmoji = rows.map(row => {
       const { image_url, ...rest } = row;
-      return { ...rest, emoji: row.emoji || null, notes: notesMap.get(row.furniture_id) || null };
+      return { 
+        ...rest, 
+        emoji: row.emoji || null, 
+        notes: notesMap.get(row.furniture_id) || null,
+        is_for_sale: row.is_for_sale === 1 || row.is_for_sale === true || row.is_for_sale === undefined || row.is_for_sale === null
+      };
     });
     res.json(rowsWithEmoji);
   } catch (error) {
     // If emoji column doesn't exist, try without it
     if (error.code === 'ER_BAD_FIELD_ERROR' && error.message.includes('emoji')) {
       try {
-        const [rows] = await pool.execute('SELECT * FROM Furniture ORDER BY furniture_id DESC');
+        const includeInactive = req.query.includeInactive === 'true';
+        const query = includeInactive 
+          ? 'SELECT * FROM Furniture ORDER BY furniture_id DESC'
+          : 'SELECT * FROM Furniture WHERE is_for_sale = TRUE ORDER BY furniture_id DESC';
+        const [rows] = await pool.execute(query);
         // Get notes
         const furnitureIds = rows.map(row => row.furniture_id);
         let notesMap = new Map();
@@ -55,16 +72,81 @@ router.get('/', async (req, res, next) => {
             console.log('Note: Inventory_Log table may not exist:', notesError.message);
           }
         }
-        // Add null emoji to each row and remove image_url, add notes
+        // Add null emoji to each row and remove image_url, add notes, ensure is_for_sale is boolean
         const rowsWithEmoji = rows.map(row => {
           const { image_url, ...rest } = row;
-          return { ...rest, emoji: null, notes: notesMap.get(row.furniture_id) || null };
+          return { 
+            ...rest, 
+            emoji: null, 
+            notes: notesMap.get(row.furniture_id) || null,
+            is_for_sale: row.is_for_sale === 1 || row.is_for_sale === true || row.is_for_sale === undefined || row.is_for_sale === null
+          };
         });
         return res.json(rowsWithEmoji);
       } catch (fallbackError) {
         return next(fallbackError);
       }
     }
+    next(error);
+  }
+});
+
+// PATCH toggle is_for_sale status (mark as not for sale / restore for sale)
+// This route must come BEFORE /:id to avoid route conflicts
+router.patch('/:id/toggle-sale-status', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { is_for_sale } = req.body;
+    
+    if (typeof is_for_sale !== 'boolean') {
+      return res.status(400).json({ error: 'is_for_sale must be a boolean value' });
+    }
+    
+    // Check if is_for_sale column exists, if not, skip this update
+    let result;
+    try {
+      [result] = await pool.execute(
+        'UPDATE Furniture SET is_for_sale = ? WHERE furniture_id = ?',
+        [is_for_sale ? 1 : 0, id]
+      );
+    } catch (updateError) {
+      // If column doesn't exist, return error
+      if (updateError.code === 'ER_BAD_FIELD_ERROR' && updateError.message.includes('is_for_sale')) {
+        return res.status(400).json({ error: 'is_for_sale column does not exist. Please run migrations.' });
+      }
+      throw updateError;
+    }
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    
+    // Get updated item
+    const [updatedItem] = await pool.execute('SELECT * FROM Furniture WHERE furniture_id = ?', [id]);
+    const { image_url, ...itemWithoutImageUrl } = updatedItem[0];
+    
+    // Get notes from Inventory_Log
+    let itemNotes = null;
+    try {
+      const [notesRows] = await pool.execute(
+        'SELECT notes FROM Inventory_Log WHERE furniture_id = ? LIMIT 1',
+        [id]
+      );
+      if (notesRows.length > 0) {
+        itemNotes = notesRows[0].notes || null;
+      }
+    } catch (notesError) {
+      console.log('Note: Inventory_Log table may not exist:', notesError.message);
+    }
+    
+    res.json({ 
+      ...itemWithoutImageUrl, 
+      emoji: updatedItem[0].emoji || null,
+      notes: itemNotes,
+      is_for_sale: updatedItem[0].is_for_sale === 1 || updatedItem[0].is_for_sale === true,
+      message: is_for_sale ? 'Item restored for sale' : 'Item marked as not for sale'
+    });
+  } catch (error) {
     next(error);
   }
 });
@@ -93,10 +175,15 @@ router.get('/:id', async (req, res, next) => {
       console.log('Note: Inventory_Log table may not exist:', notesError.message);
     }
     
-    // Ensure emoji field exists and remove image_url if it exists
+    // Ensure emoji field exists and remove image_url if it exists, ensure is_for_sale is boolean
     const item = rows[0];
     const { image_url, ...itemWithoutImageUrl } = item;
-    res.json({ ...itemWithoutImageUrl, emoji: item.emoji || null, notes });
+    res.json({ 
+      ...itemWithoutImageUrl, 
+      emoji: item.emoji || null, 
+      notes,
+      is_for_sale: item.is_for_sale === 1 || item.is_for_sale === true || (item.is_for_sale === undefined || item.is_for_sale === null ? true : false)
+    });
   } catch (error) {
     // If emoji column doesn't exist, try without it
     if (error.code === 'ER_BAD_FIELD_ERROR' && error.message.includes('emoji')) {
@@ -120,7 +207,12 @@ router.get('/:id', async (req, res, next) => {
         }
         const item = rows[0];
         const { image_url, ...itemWithoutImageUrl } = item;
-        return res.json({ ...itemWithoutImageUrl, emoji: null, notes });
+        return res.json({ 
+          ...itemWithoutImageUrl, 
+          emoji: null, 
+          notes,
+          is_for_sale: item.is_for_sale === 1 || item.is_for_sale === true || item.is_for_sale === undefined || item.is_for_sale === null
+        });
       } catch (fallbackError) {
         return next(fallbackError);
       }
@@ -196,9 +288,13 @@ router.post('/', async (req, res, next) => {
     }
     
     const [newItem] = await pool.execute('SELECT * FROM Furniture WHERE furniture_id = ?', [result.insertId]);
-    // Remove image_url from response
+    // Remove image_url from response, ensure is_for_sale is boolean
     const { image_url, ...itemWithoutImageUrl } = newItem[0];
-    res.status(201).json({ ...itemWithoutImageUrl, emoji: newItem[0].emoji || null });
+    res.status(201).json({ 
+      ...itemWithoutImageUrl, 
+      emoji: newItem[0].emoji || null,
+      is_for_sale: newItem[0].is_for_sale === 1 || newItem[0].is_for_sale === true || (newItem[0].is_for_sale === undefined || newItem[0].is_for_sale === null ? true : false)
+    });
   } catch (error) {
     console.error('Error in POST /items:', error);
     console.error('Error details:', {
@@ -360,9 +456,14 @@ router.put('/:id', async (req, res, next) => {
       console.log('Note: Inventory_Log table may not exist:', notesError.message);
     }
     
-    // Remove image_url from response
+    // Remove image_url from response, ensure is_for_sale is boolean
     const { image_url, ...itemWithoutImageUrl } = updatedItem[0];
-    res.json({ ...itemWithoutImageUrl, emoji: updatedItem[0].emoji || null, notes: itemNotes });
+    res.json({ 
+      ...itemWithoutImageUrl, 
+      emoji: updatedItem[0].emoji || null, 
+      notes: itemNotes,
+      is_for_sale: updatedItem[0].is_for_sale === 1 || updatedItem[0].is_for_sale === true || (updatedItem[0].is_for_sale === undefined || updatedItem[0].is_for_sale === null ? true : false)
+    });
   } catch (error) {
     next(error);
   }

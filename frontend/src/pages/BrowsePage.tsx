@@ -31,6 +31,10 @@ export default function BrowsePage() {
   };
 
   const filteredItems = items.filter((item) => {
+    // Only show items that are for sale (backend should filter this, but add extra safety)
+    const isForSale = item.is_for_sale !== false && item.is_for_sale !== 0 && item.is_for_sale !== undefined;
+    if (!isForSale) return false;
+    
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
     const matchesCategory = !categoryFilter || item.category === categoryFilter;

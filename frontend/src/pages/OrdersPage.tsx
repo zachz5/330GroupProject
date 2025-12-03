@@ -291,8 +291,8 @@ export default function OrdersPage() {
                               </div>
                             ) : (
                               <>
-                                <p className="font-semibold text-gray-900">{formatPrice(transaction.total_amount)}</p>
-                                <p className="text-sm text-gray-600">{totalItems} item(s)</p>
+                            <p className="font-semibold text-gray-900">{formatPrice(transaction.total_amount)}</p>
+                            <p className="text-sm text-gray-600">{totalItems} item(s)</p>
                               </>
                             )}
                           </td>
@@ -405,11 +405,11 @@ export default function OrdersPage() {
                                   
                                   return (
                                     <div key={item.detail_id} className="flex items-center gap-3 p-3 bg-white rounded border border-gray-200">
-                                      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg">
-                                        {getFurnitureEmoji({ name: item.name || '', category: item.category || '' })}
-                                      </div>
-                                      <div className="flex-1">
-                                        <p className="font-medium text-gray-900">{item.name || 'Unknown Item'}</p>
+                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg">
+                                      {getFurnitureEmoji({ name: item.name || '', category: item.category || '' })}
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className="font-medium text-gray-900">{item.name || 'Unknown Item'}</p>
                                         {isEditing ? (
                                           <div className="flex items-center gap-3 mt-1">
                                             <div className="flex items-center gap-2">
@@ -436,7 +436,7 @@ export default function OrdersPage() {
                                             </div>
                                           </div>
                                         ) : (
-                                          <p className="text-sm text-gray-600">
+                                      <p className="text-sm text-gray-600">
                                             Quantity: {displayQuantity} × {formatPrice(displayPrice)}
                                           </p>
                                         )}
